@@ -1,17 +1,17 @@
 # Active task
 
-## H4 — Sessions in SQLite (`goal.md` Part A, phase H4)
+## H5 — Security sandboxing (`goal.md` Part A, phase H5)
 
-- [ ] `harness/schema.sql`: sessions, messages, tool_calls, context_events, usage
-- [ ] `harness/session.py`: create / append / load / list / delete, WAL mode
-- [ ] Recorder wired into `run_turn` so messages are durable mid-turn
-- [ ] Resume a session by id; two sessions stay isolated
-- [ ] Usage totals for `/usage`; context events preserved
-- [ ] Tests: round-trip, crash mid-turn, reopen, cascade delete, redaction hook
+- [ ] `harness/security.py`: policy defaults, allowlist, size caps, tool-call budget
+- [ ] Untrusted-document wrapper + neutralization for retrieved text
+- [ ] Secret redaction, wired into session writes and error strings
+- [ ] Path containment helper (ready for future file tools)
+- [ ] Wire policy into the registry and the loop; every refusal is a tool error
+- [ ] Tests: unknown/disallowed tool, oversized args, budget exhaustion, injection
+      payload stays data, redaction, traversal rejection
 
-Done when: `pytest -q` is green and a session can be closed and reloaded with its
-tool calls intact.
+Done when: `pytest -q` is green and a document cannot turn into a tool call.
 
 ---
 
-_Done: H1 (loop), H2 (tools), H3 (context)._
+_Done: H1 (loop), H2 (tools), H3 (context), H4 (sessions)._

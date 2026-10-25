@@ -5,6 +5,7 @@ from .context import ContextEvent, ContextManager, LLMSummarizer
 from .llm import LLMClient, LLMError, LLMResponse
 from .loop import TurnResult, run_turn
 from .messages import Message, ToolCall
+from .session import SessionInfo, SessionStore
 from .tools import EchoTool, Tool, ToolRegistry, ToolResult
 
 __all__ = [
@@ -18,6 +19,8 @@ __all__ = [
     "LLMSummarizer",
     "LLMResponse",
     "Message",
+    "SessionInfo",
+    "SessionStore",
     "Tool",
     "ToolCall",
     "ToolRegistry",

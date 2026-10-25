@@ -8,7 +8,7 @@ session recorder) always gets a transcript it can persist.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, Sequence
+from typing import Literal, Protocol, Sequence
 
 from .config import Config
 from .context import ContextEvent, ContextManager
@@ -18,6 +18,16 @@ from .tools.base import ToolResult
 from .tools.registry import ToolRegistry
 
 StopReason = Literal["answer", "max_iterations", "llm_error"]
+
+
+class TurnRecorder(Protocol):
+    """Durable write path used during a turn (implemented by SessionRecorder)."""
+
+    def message(self, message: Message) -> None: ...
+
+    def context_event(self, event: ContextEvent) -> None: ...
+
+    def usage(self, usage: dict[str, int]) -> None: ...
 
 
 @dataclass(slots=True)
@@ -44,6 +54,7 @@ def run_turn(
     max_iterations: int | None = None,
     config: Config | None = None,
     context: ContextManager | None = None,
+    recorder: TurnRecorder | None = None,
 ) -> TurnResult:
     """Run one turn to a final answer, an iteration cap, or a model failure.
 
@@ -65,6 +76,9 @@ def run_turn(
             messages = budgeted.conversation
             request = budgeted.request
             events.extend(budgeted.events)
+            if recorder is not None:
+                for event in budgeted.events:
+                    recorder.context_event(event)
 
         try:
             response = client.complete(request, tools=specs)
@@ -78,9 +92,13 @@ def run_turn(
             )
 
         steps += 1
+        if recorder is not None and response.usage:
+            recorder.usage(response.usage)
         messages.append(
             Message(role="assistant", content=response.content, tool_calls=list(response.tool_calls))
         )
+        if recorder is not None:
+            recorder.message(messages[-1])
 
         if not response.tool_calls:
             return TurnResult(
@@ -104,6 +122,8 @@ def run_turn(
                     name=call.name,
                 )
             )
+            if recorder is not None:
+                recorder.message(messages[-1])
 
     return TurnResult(
         messages=messages,

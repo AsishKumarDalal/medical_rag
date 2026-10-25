@@ -16,6 +16,7 @@ DEFAULT_CONTEXT_WINDOW = 50_000
 DEFAULT_MAX_TOKENS = 4_096
 DEFAULT_REQUEST_TIMEOUT = 600.0
 DEFAULT_MAX_ITERATIONS = 12
+DEFAULT_DB_PATH = "sessions.db"
 
 
 class ConfigError(RuntimeError):
@@ -59,6 +60,7 @@ class Config:
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT
     max_iterations: int = DEFAULT_MAX_ITERATIONS
     temperature: float | None = None
+    db_path: str = DEFAULT_DB_PATH
 
     def __post_init__(self) -> None:
         if self.max_tokens <= 0:
@@ -91,6 +93,7 @@ class Config:
             request_timeout=_number(src, "LLM_TIMEOUT", DEFAULT_REQUEST_TIMEOUT),
             max_iterations=_integer(src, "HARNESS_MAX_ITERATIONS", DEFAULT_MAX_ITERATIONS),
             temperature=_optional_number(src, "LLM_TEMPERATURE"),
+            db_path=src.get("HARNESS_DB", "").strip() or DEFAULT_DB_PATH,
         )
 
 
