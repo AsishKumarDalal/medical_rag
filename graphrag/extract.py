@@ -25,6 +25,18 @@ from .llm import GraphLLM, GraphRagLLMError
 # another timeout here.
 RETRYABLE_MARKERS = ("empty answer", "usable json", "expected dict", "expected list")
 
+# Messages that mean the provider itself is gone, not that this chunk is bad.
+# A dead tunnel must stop the run instead of marking every pending chunk failed.
+ENDPOINT_FAILURE_MARKERS = (
+    "connection",
+    "timed out",
+    "timeout",
+    "error code: 5",
+    "unreachable",
+    "temporarily unavailable",
+    "name or service not known",
+)
+
 SYSTEM_PROMPT = """You are a precise entity and relationship extraction engine.
 You respond with ONLY one valid JSON object, no commentary and no markdown.
 
@@ -160,6 +172,7 @@ def extract_chunks(
     stats = ExtractionStats(skipped=len(index.chunks) - len(chunks))
     active_workers = max(1, workers if workers is not None else config.extract_workers)
     if active_workers == 1:
+        endpoint_failures = 0
         for position, chunk in enumerate(chunks, start=1):
             if progress is not None:
                 progress(position, len(chunks), chunk.id)
@@ -175,8 +188,17 @@ def extract_chunks(
                 )
             except (GraphRagLLMError, ValueError) as exc:
                 stats.failed += 1
-                checkpoint.mark_failed(chunk.id, f"{type(exc).__name__}: {exc}")
+                message = f"{type(exc).__name__}: {exc}"
+                checkpoint.mark_failed(chunk.id, message)
+                endpoint_failures = endpoint_failures + 1 if _endpoint_failure(message) else 0
+                if endpoint_failures >= config.endpoint_failure_limit:
+                    raise RuntimeError(
+                        f"endpoint looks unreachable after {endpoint_failures} consecutive chunks "
+                        f"({message[:160]}); stopped before the remaining chunks were marked "
+                        f"failed — rerun with --retry-failed once LLM_BASE_URL answers"
+                    ) from exc
                 continue
+            endpoint_failures = 0
             _record_success(checkpoint, stats, record, started)
         return stats
 
@@ -260,6 +282,11 @@ def _retryable(exc: Exception) -> bool:
         return False
     message = str(exc).lower()
     return any(marker in message for marker in RETRYABLE_MARKERS)
+
+
+def _endpoint_failure(message: str) -> bool:
+    lowered = message.lower()
+    return any(marker in lowered for marker in ENDPOINT_FAILURE_MARKERS)
 
 
 def _record_success(

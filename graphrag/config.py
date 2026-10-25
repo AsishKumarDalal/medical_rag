@@ -28,6 +28,7 @@ DEFAULT_MAX_TRIPLES = 20
 DEFAULT_EXTRACT_MAX_TOKENS = 4_096
 DEFAULT_EXTRACT_WORKERS = 1
 DEFAULT_EXTRACT_ATTEMPTS = 2
+DEFAULT_ENDPOINT_FAILURE_LIMIT = 3
 DEFAULT_EMBED_DIM = 256
 DEFAULT_EMBED_MODEL = "text-embedding-3-small"
 DEFAULT_EMBED_BATCH = 64
@@ -55,6 +56,7 @@ class GraphRagConfig:
     extract_max_tokens: int = DEFAULT_EXTRACT_MAX_TOKENS
     extract_workers: int = DEFAULT_EXTRACT_WORKERS
     extract_attempts: int = DEFAULT_EXTRACT_ATTEMPTS
+    endpoint_failure_limit: int = DEFAULT_ENDPOINT_FAILURE_LIMIT
     embed_model: str | None = None
     embed_base_url: str | None = None
     embed_api_key: str | None = None
@@ -80,6 +82,8 @@ class GraphRagConfig:
             raise GraphRagConfigError("extract workers must be positive")
         if self.extract_attempts <= 0:
             raise GraphRagConfigError("extract attempts must be positive")
+        if self.endpoint_failure_limit <= 0:
+            raise GraphRagConfigError("endpoint failure limit must be positive")
         if self.embed_dim < 16:
             raise GraphRagConfigError("embedding dimension must be at least 16")
         if not 0 < self.seed_threshold <= 1 or not 0 <= self.chunk_threshold <= 1:
@@ -144,6 +148,9 @@ class GraphRagConfig:
             extract_max_tokens=_int(src, "GRAPHRAG_EXTRACT_MAX_TOKENS", DEFAULT_EXTRACT_MAX_TOKENS),
             extract_workers=_int(src, "GRAPHRAG_EXTRACT_WORKERS", DEFAULT_EXTRACT_WORKERS),
             extract_attempts=_int(src, "GRAPHRAG_EXTRACT_ATTEMPTS", DEFAULT_EXTRACT_ATTEMPTS),
+            endpoint_failure_limit=_int(
+                src, "GRAPHRAG_ENDPOINT_FAILURE_LIMIT", DEFAULT_ENDPOINT_FAILURE_LIMIT
+            ),
             embed_model=embed_model,
             embed_base_url=src.get("GRAPHRAG_EMBED_BASE_URL", "").strip() or None,
             embed_api_key=src.get("GRAPHRAG_EMBED_API_KEY", "").strip() or None,

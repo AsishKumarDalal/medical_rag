@@ -81,10 +81,12 @@ class FakeLLM:
         *,
         fail_on: set[str] | None = None,
         empty_once: set[str] | None = None,
+        endpoint_down: bool = False,
         judge: list[list[str]] | None = None,
     ):
         self.fail_on = fail_on or set()
         self.empty_once = empty_once or set()
+        self.endpoint_down = endpoint_down
         self.judge = judge or []
         self.extract_calls: list[str] = []
         self.text_calls = 0
@@ -95,6 +97,8 @@ class FakeLLM:
             return {"groups": self.judge}
         chunk_id = user.split(PROMPT_CHUNK, 1)[1].split("\n", 1)[0].strip()
         self.extract_calls.append(chunk_id)
+        if self.endpoint_down:
+            raise GraphRagLLMError("APIStatusError: Error code: 530 - tunnel unavailable")
         if chunk_id in self.fail_on:
             raise GraphRagLLMError("stub extraction failure")
         if chunk_id in self.empty_once and chunk_id not in self._emptied:
@@ -193,6 +197,19 @@ def test_extraction_retries_an_empty_answer_then_succeeds(tmp_path):
     assert stats.failed == 0
     assert fake.extract_calls == [chunk.id, chunk.id]
     assert chunk.id in third_record_ids(config)
+
+
+def test_extraction_stops_instead_of_failing_every_chunk_when_the_endpoint_is_down(tmp_path):
+    config = graph_config(tmp_path, endpoint_failure_limit=2, extract_attempts=1)
+    index = build_chunk_index(load_corpus(FIXTURE_CORPUS), target=400, overlap=60)
+    fake = FakeLLM(endpoint_down=True)
+
+    with pytest.raises(RuntimeError, match="endpoint looks unreachable"):
+        extract_chunks(index, fake, config, limit=5)
+
+    assert len(fake.extract_calls) == 2
+    failed = Checkpoint(config.checkpoint_path, config.failed_path).failed()
+    assert len(failed) == 2  # the remaining three are still pending, not failed
 
 
 def test_extraction_does_not_retry_a_transport_failure(tmp_path):
