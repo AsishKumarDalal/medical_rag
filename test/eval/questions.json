@@ -1,0 +1,223 @@
+{
+  "description": "G4 evaluation set. Local questions are marked against chunks from the indexed corpus; global questions are scored on community citations; unanswerable questions must abstain. The first live index covers Alzheimer's disease, asthma and breast cancer (chunks 1-40).",
+  "k": 8,
+  "questions": [
+    {
+      "id": "L01",
+      "shape": "local",
+      "question": "What is Alzheimer's disease?",
+      "mode": "auto",
+      "relevant_chunks": ["alzheimer_s_disease::1", "alzheimer_s_disease::2"]
+    },
+    {
+      "id": "L02",
+      "shape": "local",
+      "question": "What are the symptoms of Alzheimer's disease?",
+      "mode": "auto",
+      "relevant_chunks": ["alzheimer_s_disease::6", "alzheimer_s_disease::9", "alzheimer_s_disease::11"]
+    },
+    {
+      "id": "L03",
+      "shape": "local",
+      "question": "What causes Alzheimer's disease?",
+      "mode": "auto",
+      "relevant_chunks": ["alzheimer_s_disease::2", "alzheimer_s_disease::14", "alzheimer_s_disease::15"]
+    },
+    {
+      "id": "L04",
+      "shape": "local",
+      "question": "How is Alzheimer's disease diagnosed?",
+      "mode": "auto",
+      "relevant_chunks": ["alzheimer_s_disease::3", "alzheimer_s_disease::7"]
+    },
+    {
+      "id": "L05",
+      "shape": "local",
+      "question": "How are behavioural problems in Alzheimer's disease treated?",
+      "mode": "auto",
+      "relevant_chunks": ["alzheimer_s_disease::4"]
+    },
+    {
+      "id": "L06",
+      "shape": "local",
+      "question": "What is asthma?",
+      "mode": "auto",
+      "relevant_chunks": ["asthma::1", "asthma::12"]
+    },
+    {
+      "id": "L07",
+      "shape": "local",
+      "question": "What triggers asthma symptoms?",
+      "mode": "auto",
+      "relevant_chunks": ["asthma::2", "asthma::12", "asthma::15"]
+    },
+    {
+      "id": "L08",
+      "shape": "local",
+      "question": "How is asthma severity measured?",
+      "mode": "auto",
+      "relevant_chunks": ["asthma::7", "asthma::8"]
+    },
+    {
+      "id": "L09",
+      "shape": "local",
+      "question": "What is asthma-COPD overlap?",
+      "mode": "auto",
+      "relevant_chunks": ["asthma::10"]
+    },
+    {
+      "id": "L10",
+      "shape": "local",
+      "question": "How common is asthma worldwide?",
+      "mode": "auto",
+      "relevant_chunks": ["asthma::3"]
+    },
+    {
+      "id": "L11",
+      "shape": "local",
+      "question": "What is breast cancer?",
+      "mode": "auto",
+      "relevant_chunks": ["breast_cancer::1", "breast_cancer::2"]
+    },
+    {
+      "id": "L12",
+      "shape": "local",
+      "question": "What are the signs of breast cancer?",
+      "mode": "auto",
+      "relevant_chunks": ["breast_cancer::1", "breast_cancer::5", "breast_cancer::6"]
+    },
+    {
+      "id": "L13",
+      "shape": "local",
+      "question": "How is breast cancer screened?",
+      "mode": "auto",
+      "relevant_chunks": ["breast_cancer::8", "breast_cancer::9", "breast_cancer::10"]
+    },
+    {
+      "id": "L14",
+      "shape": "local",
+      "question": "What types of surgery are used for breast cancer?",
+      "mode": "auto",
+      "relevant_chunks": ["breast_cancer::4"]
+    },
+    {
+      "id": "L15",
+      "shape": "local",
+      "question": "Is breast cancer more common in women than in men?",
+      "mode": "auto",
+      "relevant_chunks": ["breast_cancer::5"]
+    },
+    {
+      "id": "G01",
+      "shape": "global",
+      "question": "What are the main themes of this corpus?",
+      "mode": "global",
+      "relevant_chunks": []
+    },
+    {
+      "id": "G02",
+      "shape": "global",
+      "question": "Give an overview of the diseases covered by the corpus.",
+      "mode": "global",
+      "relevant_chunks": []
+    },
+    {
+      "id": "G03",
+      "shape": "global",
+      "question": "What does the corpus say about chronic disease?",
+      "mode": "global",
+      "relevant_chunks": []
+    },
+    {
+      "id": "G04",
+      "shape": "global",
+      "question": "Summarize the corpus at a high level.",
+      "mode": "global",
+      "relevant_chunks": []
+    },
+    {
+      "id": "G05",
+      "shape": "global",
+      "question": "What are the main topics in the corpus?",
+      "mode": "global",
+      "relevant_chunks": []
+    },
+    {
+      "id": "G06",
+      "shape": "global",
+      "question": "What is the big picture of respiratory disease in the corpus?",
+      "mode": "global",
+      "relevant_chunks": []
+    },
+    {
+      "id": "G07",
+      "shape": "global",
+      "question": "What themes connect aging and disease in the corpus?",
+      "mode": "global",
+      "relevant_chunks": []
+    },
+    {
+      "id": "G08",
+      "shape": "global",
+      "question": "What does the corpus cover about cancer?",
+      "mode": "global",
+      "relevant_chunks": []
+    },
+    {
+      "id": "U01",
+      "shape": "unanswerable",
+      "question": "Who won the 1930 World Cup?",
+      "mode": "auto",
+      "relevant_chunks": [],
+      "must_abstain": true
+    },
+    {
+      "id": "U02",
+      "shape": "unanswerable",
+      "question": "What is the capital of France?",
+      "mode": "auto",
+      "relevant_chunks": [],
+      "must_abstain": true
+    },
+    {
+      "id": "U03",
+      "shape": "unanswerable",
+      "question": "What dose of metformin should a 40-year-old patient take?",
+      "mode": "auto",
+      "relevant_chunks": [],
+      "must_abstain": true
+    },
+    {
+      "id": "U04",
+      "shape": "unanswerable",
+      "question": "Who is the CEO of Tesla?",
+      "mode": "auto",
+      "relevant_chunks": [],
+      "must_abstain": true
+    },
+    {
+      "id": "U05",
+      "shape": "unanswerable",
+      "question": "What is the price of insulin in Canada?",
+      "mode": "auto",
+      "relevant_chunks": [],
+      "must_abstain": true
+    },
+    {
+      "id": "U06",
+      "shape": "unanswerable",
+      "question": "How do I treat a broken arm at home?",
+      "mode": "auto",
+      "relevant_chunks": [],
+      "must_abstain": true
+    },
+    {
+      "id": "U07",
+      "shape": "unanswerable",
+      "question": "What did the 2024 Nobel Prize in Medicine discover?",
+      "mode": "auto",
+      "relevant_chunks": [],
+      "must_abstain": true
+    }
+  ]
+}

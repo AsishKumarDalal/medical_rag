@@ -17,6 +17,7 @@ venv/
 
 # Generated data: the corpus is reproducible from test/data/test_data_fetch.py
 test/data/corpus/
+test/data/corpus_mini/
 test/data/manifest.json
 graphrag/artifacts/
 *.jsonl

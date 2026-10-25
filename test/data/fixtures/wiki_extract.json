@@ -1,0 +1,25 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "pages": [
+      {
+        "pageid": 12345,
+        "ns": 0,
+        "title": "Asthma",
+        "extract": "Asthma is a long-term inflammatory disease of the airways of the lungs.\n\n== Signs and symptoms ==\n\nWheezing, coughing and shortness of breath are common.\n\n\n\nSymptoms are usually worse at night."
+      },
+      {
+        "pageid": 67890,
+        "ns": 0,
+        "title": "Malaria",
+        "extract": "Malaria is a mosquito-borne infectious disease.\n\n== Cause ==\n\nIt is caused by single-celled parasites of the Plasmodium group."
+      },
+      {
+        "pageid": -1,
+        "ns": 0,
+        "title": "Not a real article",
+        "missing": true
+      }
+    ]
+  }
+}
