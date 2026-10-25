@@ -168,6 +168,14 @@ class SessionStore:
         for message in messages:
             self.append_message(session_id, message, turn=turn)
 
+    def next_turn(self, session_id: str) -> int:
+        """The turn number the next user message belongs to (1-based)."""
+        row = self._db.execute(
+            "SELECT COALESCE(MAX(turn), 0) + 1 AS next FROM messages WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        return int(row["next"])
+
     def load_messages(self, session_id: str) -> list[Message]:
         rows = self._db.execute(
             "SELECT * FROM messages WHERE session_id = ? ORDER BY turn, position",
