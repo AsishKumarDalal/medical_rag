@@ -12,6 +12,7 @@ from typing import Any, Protocol, Sequence
 
 from .config import Config
 from .messages import Message, ToolCall
+from .security import redact
 
 
 class LLMError(RuntimeError):
@@ -87,7 +88,7 @@ class LLMClient:
                 last_error = exc
                 if attempt < attempts and self.backoff:
                     time.sleep(self.backoff * attempt)
-        raise LLMError(f"{type(last_error).__name__}: {last_error}") from last_error
+        raise LLMError(redact(f"{type(last_error).__name__}: {last_error}")) from last_error
 
     def _to_llm_response(self, response: Any) -> LLMResponse:
         choices = _field(response, "choices") or []

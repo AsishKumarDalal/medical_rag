@@ -14,6 +14,7 @@ from .config import Config
 from .context import ContextEvent, ContextManager
 from .llm import LLMError, SupportsComplete
 from .messages import Message
+from .security import SecurityPolicy
 from .tools.base import ToolResult
 from .tools.registry import ToolRegistry
 
@@ -55,6 +56,7 @@ def run_turn(
     config: Config | None = None,
     context: ContextManager | None = None,
     recorder: TurnRecorder | None = None,
+    policy: SecurityPolicy | None = None,
 ) -> TurnResult:
     """Run one turn to a final answer, an iteration cap, or a model failure.
 
@@ -68,6 +70,8 @@ def run_turn(
     specs = tools.specs() if tools else None
     events: list[ContextEvent] = []
     steps = 0
+    active_policy = policy or (tools.policy if tools is not None else None)
+    calls_this_turn = 0
 
     while steps < limit:
         request = messages
@@ -110,7 +114,17 @@ def run_turn(
             )
 
         for call in response.tool_calls:
-            if tools is None:
+            calls_this_turn += 1
+            if (
+                active_policy is not None
+                and calls_this_turn > active_policy.max_tool_calls_per_turn
+            ):
+                result = ToolResult.error(
+                    "tool call budget exhausted "
+                    f"({active_policy.max_tool_calls_per_turn} per turn); "
+                    "answer with the evidence you already have"
+                )
+            elif tools is None:
                 result = ToolResult.error(f"no tools are registered; cannot call {call.name!r}")
             else:
                 result = tools.execute(call)

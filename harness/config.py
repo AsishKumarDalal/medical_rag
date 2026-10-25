@@ -17,6 +17,7 @@ DEFAULT_MAX_TOKENS = 4_096
 DEFAULT_REQUEST_TIMEOUT = 600.0
 DEFAULT_MAX_ITERATIONS = 12
 DEFAULT_DB_PATH = "sessions.db"
+DEFAULT_MAX_TOOL_CALLS = 12
 
 
 class ConfigError(RuntimeError):
@@ -61,6 +62,8 @@ class Config:
     max_iterations: int = DEFAULT_MAX_ITERATIONS
     temperature: float | None = None
     db_path: str = DEFAULT_DB_PATH
+    allowed_tools: frozenset[str] | None = None
+    max_tool_calls_per_turn: int = DEFAULT_MAX_TOOL_CALLS
 
     def __post_init__(self) -> None:
         if self.max_tokens <= 0:
@@ -72,6 +75,8 @@ class Config:
             )
         if self.max_iterations <= 0:
             raise ConfigError("HARNESS_MAX_ITERATIONS must be positive")
+        if self.max_tool_calls_per_turn <= 0:
+            raise ConfigError("HARNESS_MAX_TOOL_CALLS must be positive")
 
     @classmethod
     def from_env(
@@ -94,6 +99,8 @@ class Config:
             max_iterations=_integer(src, "HARNESS_MAX_ITERATIONS", DEFAULT_MAX_ITERATIONS),
             temperature=_optional_number(src, "LLM_TEMPERATURE"),
             db_path=src.get("HARNESS_DB", "").strip() or DEFAULT_DB_PATH,
+            allowed_tools=_tools(src),
+            max_tool_calls_per_turn=_integer(src, "HARNESS_MAX_TOOL_CALLS", DEFAULT_MAX_TOOL_CALLS),
         )
 
 
@@ -122,6 +129,14 @@ def _number(env: Mapping[str, str], key: str, default: float) -> float:
         return float(raw)
     except ValueError as exc:
         raise ConfigError(f"{key} must be a number, got {raw!r}") from exc
+
+
+def _tools(env: Mapping[str, str]) -> frozenset[str] | None:
+    raw = env.get("HARNESS_ALLOWED_TOOLS", "").strip()
+    if not raw:
+        return None
+    names = {name.strip() for name in raw.split(",") if name.strip()}
+    return frozenset(names) or None
 
 
 def _optional_number(env: Mapping[str, str], key: str) -> float | None:
