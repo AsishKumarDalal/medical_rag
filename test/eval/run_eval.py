@@ -40,6 +40,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--questions", type=Path, default=QUESTIONS_PATH)
     parser.add_argument("--ids", nargs="+", help="run only these question ids (live smoke)")
     parser.add_argument("--out", type=Path, default=RESULTS_PATH)
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="reuse rows written by an interrupted run (same k and artifacts)",
+    )
     parser.add_argument("--artifacts", type=Path)
     parser.add_argument("--corpus", type=Path)
     args = parser.parse_args(argv)
@@ -74,8 +79,22 @@ def main(argv: list[str] | None = None) -> int:
         str(community.get("id")) for community in engine.communities.get("communities", [])
     }
 
+    partial_path = args.out.parent / (args.out.stem + ".partial.jsonl")
+    reused: dict[str, dict[str, Any]] = {}
+    if args.resume and partial_path.is_file():
+        for line in partial_path.read_text(encoding="utf-8").splitlines():
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict) and row.get("id"):
+                reused[str(row["id"])] = row
+
     rows: list[dict[str, Any]] = []
     for item in questions:
+        if item["id"] in reused:
+            rows.append(reused[item["id"]])
+            continue
         before_calls = llm.stats.calls if llm is not None else 0
         started = time.monotonic()
         try:
@@ -110,6 +129,10 @@ def main(argv: list[str] | None = None) -> int:
             else None
         )
         rows.append(row)
+        # The live run can take hours on a slow endpoint; keep each finished row so
+        # an interrupted run resumes with --resume instead of re-billing every call.
+        with partial_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     summary = _summary(rows)
     snapshot = _snapshot(config)
