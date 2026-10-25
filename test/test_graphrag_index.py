@@ -76,11 +76,19 @@ def extraction_payload(chunk_id: str) -> dict:
 
 
 class FakeLLM:
-    def __init__(self, *, fail_on: set[str] | None = None, judge: list[list[str]] | None = None):
+    def __init__(
+        self,
+        *,
+        fail_on: set[str] | None = None,
+        empty_once: set[str] | None = None,
+        judge: list[list[str]] | None = None,
+    ):
         self.fail_on = fail_on or set()
+        self.empty_once = empty_once or set()
         self.judge = judge or []
         self.extract_calls: list[str] = []
         self.text_calls = 0
+        self._emptied: set[str] = set()
 
     def complete_json(self, *, system, user, max_tokens=None, attempts=2, expect=(dict, list), retry_note=None):
         if user.startswith("Candidate entities:"):
@@ -89,6 +97,9 @@ class FakeLLM:
         self.extract_calls.append(chunk_id)
         if chunk_id in self.fail_on:
             raise GraphRagLLMError("stub extraction failure")
+        if chunk_id in self.empty_once and chunk_id not in self._emptied:
+            self._emptied.add(chunk_id)
+            raise GraphRagLLMError("model returned an empty answer (finish_reason='stop')")
         return extraction_payload(chunk_id)
 
     def complete_text(self, *, system, user, max_tokens=None, temperature=None):
@@ -168,6 +179,32 @@ def test_checkpoint_resumes_and_retries_failed_chunks(tmp_path):
     third = extract_chunks(two, fake, config, retry_failed=True)
     assert third.failed == 0
     assert first_id in third_record_ids(config)
+
+
+def test_extraction_retries_an_empty_answer_then_succeeds(tmp_path):
+    config = graph_config(tmp_path, extract_attempts=2)
+    index = build_chunk_index(load_corpus(FIXTURE_CORPUS), target=400, overlap=60)
+    chunk = index.chunks[0]
+    fake = FakeLLM(empty_once={chunk.id})
+
+    stats = extract_chunks(index, fake, config, limit=1)
+
+    assert stats.written == 1
+    assert stats.failed == 0
+    assert fake.extract_calls == [chunk.id, chunk.id]
+    assert chunk.id in third_record_ids(config)
+
+
+def test_extraction_does_not_retry_a_transport_failure(tmp_path):
+    config = graph_config(tmp_path, extract_attempts=3)
+    index = build_chunk_index(load_corpus(FIXTURE_CORPUS), target=400, overlap=60)
+    chunk = index.chunks[0]
+    fake = FakeLLM(fail_on={chunk.id})
+
+    stats = extract_chunks(index, fake, config, limit=1)
+
+    assert stats.failed == 1
+    assert fake.extract_calls == [chunk.id]
 
 
 def third_record_ids(config: GraphRagConfig) -> set[str]:

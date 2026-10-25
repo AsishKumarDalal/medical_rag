@@ -20,6 +20,11 @@ from .chunk import Chunk, ChunkIndex
 from .config import GraphRagConfig
 from .llm import GraphLLM, GraphRagLLMError
 
+# A completed call that came back empty or non-JSON is worth one more ask; a
+# transport failure is already retried inside ``GraphLLM`` and would only cost
+# another timeout here.
+RETRYABLE_MARKERS = ("empty answer", "usable json", "expected dict", "expected list")
+
 SYSTEM_PROMPT = """You are a precise entity and relationship extraction engine.
 You respond with ONLY one valid JSON object, no commentary and no markdown.
 
@@ -161,11 +166,12 @@ def extract_chunks(
             stats.attempted += 1
             started = time.monotonic()
             try:
-                record = extract_chunk(
+                record = _extract_with_retry(
                     chunk,
                     llm,
                     max_triples=config.max_triples_per_chunk,
                     max_tokens=config.extract_max_tokens,
+                    attempts=config.extract_attempts,
                 )
             except (GraphRagLLMError, ValueError) as exc:
                 stats.failed += 1
@@ -183,6 +189,7 @@ def extract_chunks(
                 llm,
                 config.max_triples_per_chunk,
                 config.extract_max_tokens,
+                config.extract_attempts,
             ): chunk
             for chunk in chunks
         }
@@ -206,10 +213,53 @@ def extract_chunks(
     return stats
 
 
-def _timed_extract(chunk: Chunk, llm: GraphLLM, max_triples: int, max_tokens: int):
+def _timed_extract(
+    chunk: Chunk,
+    llm: GraphLLM,
+    max_triples: int,
+    max_tokens: int,
+    attempts: int,
+):
     started = time.monotonic()
-    record = extract_chunk(chunk, llm, max_triples=max_triples, max_tokens=max_tokens)
+    record = _extract_with_retry(
+        chunk,
+        llm,
+        max_triples=max_triples,
+        max_tokens=max_tokens,
+        attempts=attempts,
+    )
     return record, time.monotonic() - started
+
+
+def _extract_with_retry(
+    chunk: Chunk,
+    llm: GraphLLM,
+    *,
+    max_triples: int,
+    max_tokens: int,
+    attempts: int,
+    backoff: float = 1.0,
+) -> dict[str, Any]:
+    """I3: retry an unusable answer, then let the caller record a failure."""
+    attempts = max(1, attempts)
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return extract_chunk(chunk, llm, max_triples=max_triples, max_tokens=max_tokens)
+        except (GraphRagLLMError, ValueError) as exc:
+            last_error = exc
+            if attempt >= attempts or not _retryable(exc):
+                raise
+            if backoff:
+                time.sleep(backoff * attempt)
+    raise last_error  # pragma: no cover - the loop always returns or raises
+
+
+def _retryable(exc: Exception) -> bool:
+    if not isinstance(exc, GraphRagLLMError):
+        return False
+    message = str(exc).lower()
+    return any(marker in message for marker in RETRYABLE_MARKERS)
 
 
 def _record_success(
