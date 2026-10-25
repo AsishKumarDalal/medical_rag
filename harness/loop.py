@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Literal, Sequence
 
 from .config import Config
+from .context import ContextEvent, ContextManager
 from .llm import LLMError, SupportsComplete
 from .messages import Message
 from .tools.base import ToolResult
@@ -28,6 +29,7 @@ class TurnResult:
     stop_reason: StopReason = "answer"
     iterations: int = 0
     error: str | None = None
+    context_events: list[ContextEvent] = field(default_factory=list)
 
     @property
     def answered(self) -> bool:
@@ -41,30 +43,44 @@ def run_turn(
     tools: ToolRegistry | None = None,
     max_iterations: int | None = None,
     config: Config | None = None,
+    context: ContextManager | None = None,
 ) -> TurnResult:
     """Run one turn to a final answer, an iteration cap, or a model failure.
 
     ``conversation`` is copied; the returned ``messages`` is the full transcript,
-    input messages first, ready to be stored as the next conversation state.
+    input messages first, ready to be stored as the next conversation state. If a
+    context manager is given, the transcript may be compressed and the request is
+    the possibly-stubbed view of it.
     """
     limit = max_iterations or (config.max_iterations if config else 12)
     messages = list(conversation)
     specs = tools.specs() if tools else None
+    events: list[ContextEvent] = []
     steps = 0
 
     while steps < limit:
+        request = messages
+        if context is not None:
+            budgeted = context.apply(messages)
+            messages = budgeted.conversation
+            request = budgeted.request
+            events.extend(budgeted.events)
+
         try:
-            response = client.complete(messages, tools=specs)
+            response = client.complete(request, tools=specs)
         except LLMError as exc:
             return TurnResult(
                 messages=messages,
                 stop_reason="llm_error",
                 iterations=steps,
                 error=str(exc),
+                context_events=events,
             )
 
         steps += 1
-        messages.append(Message(role="assistant", content=response.content, tool_calls=list(response.tool_calls)))
+        messages.append(
+            Message(role="assistant", content=response.content, tool_calls=list(response.tool_calls))
+        )
 
         if not response.tool_calls:
             return TurnResult(
@@ -72,6 +88,7 @@ def run_turn(
                 final=response.content,
                 stop_reason="answer",
                 iterations=steps,
+                context_events=events,
             )
 
         for call in response.tool_calls:
@@ -93,4 +110,5 @@ def run_turn(
         stop_reason="max_iterations",
         iterations=steps,
         error=f"stopped after {limit} model calls without a final answer",
+        context_events=events,
     )
