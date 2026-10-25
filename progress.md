@@ -4,9 +4,11 @@ Living status of this repo. Updated when a phase or meaningful feature completes
 Task protocol and detailed learnings live in `TASK.md` and `logs-and-fixes.md`.
 
 - **Last updated:** 2026-10-25
-- **Current phase:** G1 — indexing (live mini run in progress)
-- **Next:** finish the 40-chunk extraction, build graph/communities/vectors, then
-  live G2 queries, G3 tool round-trip and the G4 evaluation run.
+- **Current phase:** G1 — indexing (live mini run **paused: dev endpoint is down**)
+- **Next:** restore `LLM_BASE_URL` (the tunnel answers HTTP 530), then
+  `.venv/bin/python -m graphrag.build --stage extract --retry-failed` and the
+  `graph`/`resolve`/`communities`/`embed` stages; then live G2 queries, G3 tool
+  round-trip and the G4 evaluation run.
 
 ## Phases
 
@@ -19,7 +21,7 @@ Task protocol and detailed learnings live in `TASK.md` and `logs-and-fixes.md`.
 | **H5** | Security: allowlist, budgets, injection wrapping, redaction | ✅ done |
 | **H6** | Minimal CLI REPL + scripted run | ✅ done |
 | **G0** | Corpus fetch script + 24 articles + offline tests | ✅ done |
-| **G1** | Indexing pipeline (I1–I11) + live mini run | 🔄 code/tests done; live run in progress |
+| **G1** | Indexing pipeline (I1–I11) + live mini run | 🔄 code/tests done; live run 6/40 chunks, paused (endpoint 530) |
 | **G2** | Query pipeline (Q0–QG) + live smoke queries | 🔄 code/tests done; live pending |
 | **G3** | Harness integration — RAG as the tool, end-to-end | 🔄 code/tests done; live transcript pending |
 | **G4** | Evaluation set, run script, `docs/eval.md` | 🔄 questions/script done; run pending |
@@ -62,9 +64,12 @@ test/               pytest suite and evaluation
   (`test/docs/h3-context.md`), CLI run (`test/docs/h6-cli.md`).
 - **G0 live:** 24/24 articles, 260,462 characters; manifest hash recorded in
   `graphrag/docs/g0.md`.
-- **G1 live:** 40 chunks from Alzheimer's disease, asthma and breast cancer are
-  being extracted into `graphrag/artifacts/triples.jsonl`; each call takes roughly
-  50–190 s on the dev endpoint, so the run is checkpointed and resumable.
+- **G1 live (paused):** the mini index is built — 40 chunks from Alzheimer's
+  disease, asthma and breast cancer (`index.json` sha256 `d296e584…fd3cf809`).
+  Extraction checkpointed 6 chunks into `triples.jsonl`; `::6` is recorded as a
+  failed chunk and 33 are pending. The dev tunnel started answering HTTP 530 at
+  ~18:08, so the run was stopped rather than letting 600 s timeouts mark chunks
+  failed; re-run with `--retry-failed` after restoring `LLM_BASE_URL`.
 
 ## Known issues / environment notes
 

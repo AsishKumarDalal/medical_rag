@@ -15,6 +15,20 @@ Do not: the trap to avoid next time
 
 ---
 
+## 2026-10-25 — The dev tunnel died mid-extraction (HTTP 530)
+
+Context: the 40-chunk G1 live run; chunk `alzheimer_s_disease::8` sat in flight for
+~10 minutes after chunk 7 landed.
+Tried: waiting for the call — the per-request timeout is 600 s, so a dead endpoint
+looks exactly like a slow model and would burn one chunk per timeout.
+Fixed: probed `$LLM_BASE_URL/models` and a chat call directly → both returned an
+instant Cloudflare **530** error page, so the tunnel is down, not the code. Stopped
+the extraction before the remaining 33 chunks were marked permanently failed; the
+checkpoint keeps 6 records and `::6` as the only failed chunk.
+Do not: leave a live extraction running through a dead endpoint — failed chunks are
+skipped on resume unless `--retry-failed` is passed, and the 530 arrives in under a
+second while each skipped chunk costs a 600 s timeout first.
+
 ## 2026-10-25 — Hash cosine alone ranks the wrong medical passage
 
 Context: G4's offline retrieval baseline showed "What is asthma?" losing the

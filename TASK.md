@@ -12,6 +12,8 @@
 - [x] `build.py` stage CLI + `graphrag/llm.py` single model doorway
 - [x] Offline tests for every stage with a stub LLM and a mini fixture corpus
 - [ ] Live mini run on at least 3 real articles, artifacts recorded in `graphrag/docs/g1.md`
+      — paused at 6/40 chunks: the dev tunnel answers HTTP 530; resume with
+      `--stage extract --retry-failed` once `LLM_BASE_URL` is live again
 
 Done when `python -m graphrag.build --stage all` rebuilds graph, communities and
 vectors from the checkpoint, and the offline suite is green.
