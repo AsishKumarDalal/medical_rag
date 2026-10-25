@@ -15,6 +15,20 @@ Do not: the trap to avoid next time
 
 ---
 
+## 2026-10-25 — Hash cosine alone ranks the wrong medical passage
+
+Context: G4's offline retrieval baseline showed "What is asthma?" losing the
+definition chunk, and "What triggers asthma symptoms?" returning unrelated asthma
+chunks.
+Tried: trusting the hash-vector cosine; trigram collisions and generic medical
+words drowned the intent word (`trigger`).
+Fixed: for the hash backend, require shared content words, rescore by overlap
+(cosine as a tie-breaker), and require two matches when there is no graph seed.
+This also made the out-of-scope questions abstain instead of returning a random
+passage. Real embedding backends still use pure cosine.
+Do not: tune a lexical fallback as if it were a semantic model; use the signal it
+actually has, and say so in the artifact metadata.
+
 ## 2026-10-25 — A narrator refusal was being converted into a cited answer
 
 Context: Q5 promised an honest "evidence does not contain this" path even when

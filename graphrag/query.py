@@ -290,7 +290,11 @@ class GraphRagEngine:
         seeds = dict(sorted(seeds.items(), key=lambda item: (-item[1], item[0]))[: self.config.max_seeds])
 
         walk_edges, distances = self._walk(set(seeds), hops=self.config.walk_hops)
-        fetched = self._fetch_chunks(probe, k=max(k * 3, 12))
+        fetched = self._fetch_chunks(
+            probe,
+            k=max(k * 3, 12),
+            min_matches=1 if seeds else 2,
+        )
         candidates = self._rank_facts(probe, walk_edges, distances, set(seeds))
         facts = self.reranker(question, candidates, k)
 
@@ -421,23 +425,36 @@ class GraphRagEngine:
                 break
         return list(edges.values()), distances
 
-    def _fetch_chunks(self, probe: list[float], *, k: int) -> list[tuple[str, float]]:
+    def _fetch_chunks(
+        self,
+        probe: list[float],
+        *,
+        k: int,
+        min_matches: int = 1,
+    ) -> list[tuple[str, float]]:
         threshold = _effective(self.vectors, self.config.chunk_threshold)
         candidates = top_matches(
             probe,
             self.vectors.chunks,
-            k=max(k * 3, 12),
+            k=max(k * 6, 24),
             threshold=threshold,
         )
         if self.vectors.backend.startswith("hash"):
-            # Hash vectors are lexical; a high cosine without a shared content
-            # word is collision noise. Real embedding backends keep the pure door.
-            question_tokens = _content_tokens(self._current_question)
-            candidates = [
-                (chunk_id, score)
-                for chunk_id, score in candidates
-                if question_tokens & _content_tokens(self.chunks[chunk_id].text)
-            ]
+            # Hashing is lexical, not semantic. Rank the honest signal: shared
+            # question/chunk content words, with cosine as a tie-breaker.
+            question_tokens = _lexical_tokens(self._current_question)
+            rescored: list[tuple[str, float]] = []
+            for chunk_id, score in candidates:
+                chunk_tokens = _lexical_tokens(self.chunks[chunk_id].text)
+                if not question_tokens:
+                    continue
+                matched = len(question_tokens & chunk_tokens)
+                if matched < min(min_matches, len(question_tokens)):
+                    continue
+                overlap = matched / len(question_tokens)
+                rescored.append((chunk_id, 0.45 * score + 0.55 * overlap))
+            rescored.sort(key=lambda item: (-item[1], item[0]))
+            candidates = rescored
         return candidates[: max(k * 3, 12)]
 
     def _rank_facts(
@@ -698,15 +715,19 @@ def _is_refusal(text: str) -> bool:
     return REFUSAL in (text or "").lower()
 
 
-def _content_tokens(text: str) -> set[str]:
+def _lexical_tokens(text: str) -> set[str]:
     found: set[str] = set()
     for token in normalize_entity(text).split():
         if len(token) < 4:
             continue
         token = _stem(token)
-        if token not in GENERIC_TOKENS and token not in QUERY_STOPWORDS:
+        if token not in QUERY_STOPWORDS:
             found.add(token)
     return found
+
+
+def _content_tokens(text: str) -> set[str]:
+    return _lexical_tokens(text) - GENERIC_TOKENS
 
 
 def _stem(token: str) -> str:
