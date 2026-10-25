@@ -21,10 +21,20 @@ docs/       design notes and the upstream GraphRAG spec
 
 ## Status
 
-Preparation only: documents and structure. No code yet — phase H1 is next in
-`TASK.md`.
+**H1 — agentic loop: done.** The loop calls tools, feeds results back and stops on
+an answer, an iteration cap or a model failure. Verified live against the dev
+endpoint: see [`test/docs/smoke-h1.md`](test/docs/smoke-h1.md). Next is H2 (tools).
 
-## Requirements (from H1 onward)
+## Running it
+
+```bash
+uv venv .venv && uv pip install --python .venv/bin/python -r requirements.txt
+cp .env.example .env          # then set LLM_BASE_URL / LLM_MODEL
+.venv/bin/python -m pytest -q # offline, stubbed model
+.venv/bin/python test/smoke_h1.py   # live tool round-trip
+```
+
+## Requirements
 
 Python 3.11+, an OpenAI-compatible chat endpoint, `pytest`, and — after
 `test/data/test_data_fetch.py` exists — outbound HTTP access to the article sources.

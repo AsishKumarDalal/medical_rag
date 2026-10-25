@@ -15,6 +15,36 @@ Do not: the trap to avoid next time
 
 ---
 
+## 2026-10-25 — `python3 -m venv` fails on this machine
+
+Context: creating `.venv` for `openai` + `pytest`.
+Tried: `python3 -m venv .venv` → "ensurepip is not available", on Python 3.14.4
+(Ubuntu, no `python3.14-venv` package).
+Fixed: `uv venv .venv && uv pip install --python .venv/bin/python -r requirements.txt`.
+`uv` was already at `~/.local/bin/uv`.
+Do not: `apt install python3.14-venv` (sudo, heavy) when `uv` is right there.
+
+## 2026-10-25 — Scripts under `test/` cannot import `harness`
+
+Context: `python test/smoke_h1.py` → `ModuleNotFoundError: No module named 'harness'`.
+Tried: assuming the project root is on `sys.path`; running a file puts its own
+folder (`test/`) there instead.
+Fixed: scripts insert `Path(__file__).resolve().parents[1]` at the top; pytest
+gets the root via `pythonpath = .` in `pytest.ini`, so `pytest -q` works from anywhere.
+Do not: create a `conftest.py` that patches `sys.path` when the ini option exists.
+
+## 2026-10-25 — The dev endpoint does tool calling, but returns SDK objects
+
+Context: first live H1 run against the Ollama tunnel (`k2-horizon-mova-36b-a4b`).
+Tried: reading `message.tool_calls[0]` as a dict → attribute errors are easy to hit.
+Fixed: `openai` 3.x returns pydantic models; normalize with `model_dump()` before
+`ToolCall.from_provider(...)`. The model does emit `tool_calls` with `tools=` set,
+so the harness can rely on real tool calling in development. Keep `max_tokens` at
+4096: prompt + output must stay under 50,000, and `Config` rejects a completion cap
+that leaves no room.
+Do not: send `temperature` by default — reasoning models can reject it. It stays
+unset unless `LLM_TEMPERATURE` is defined.
+
 ## 2026-10-25 — The upstream "rag_docs" link 404s unauthenticated
 
 Context: fetching `github.com/AsishKumarDalal/final-year-project/tree/main/docs/rag_docs`
