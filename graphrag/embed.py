@@ -17,7 +17,7 @@ import json
 import math
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Protocol, Sequence
@@ -27,7 +27,7 @@ from .config import GraphRagConfig
 from .graph import Graph, GraphEdge
 from .llm import GraphLLM, GraphRagLLMError
 
-VECTORS_VERSION = 1
+VECTORS_VERSION = 2
 _TOKEN = re.compile(r"[a-z0-9]+")
 
 
@@ -100,6 +100,10 @@ class VectorStore:
     facts: dict[str, list[float]]
     chunks: dict[str, list[float]]
     fallback_reason: str | None = None
+    # ``<inventory>:<key> -> text hash``: a stored vector is reused only when the
+    # text it was built from is unchanged, so a rebuilt graph never keeps stale
+    # vectors for a key whose content moved.
+    fingerprints: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -117,6 +121,7 @@ class VectorStore:
             "nodes": self.nodes,
             "facts": self.facts,
             "chunks": self.chunks,
+            "fingerprints": self.fingerprints,
         }
 
     @classmethod
@@ -131,6 +136,10 @@ class VectorStore:
             facts={key: [float(v) for v in vector] for key, vector in payload.get("facts", {}).items()},
             chunks={key: [float(v) for v in vector] for key, vector in payload.get("chunks", {}).items()},
             fallback_reason=payload.get("fallback_reason"),
+            fingerprints={
+                str(key): str(value)
+                for key, value in (payload.get("fingerprints") or {}).items()
+            },
         )
 
 
@@ -167,10 +176,16 @@ def build_vectors(
         ("chunks", chunk_texts, previous.chunks if previous else {}),
     ):
         mapping: dict[str, list[float]] = {}
-        missing = [key for key in texts if key not in existing]
-        for key in texts:
-            if key in existing:
+        missing: list[str] = []
+        for key, text in texts.items():
+            fingerprint = _fingerprint(text)
+            slot = f"{name}:{key}"
+            store.fingerprints[slot] = fingerprint
+            cached = previous.fingerprints.get(slot) if previous else None
+            if key in existing and cached == fingerprint:
                 mapping[key] = existing[key]
+            else:
+                missing.append(key)
         if missing:
             vectors = embedder.embed([texts[key] for key in missing])
             mapping.update(dict(zip(missing, vectors)))
@@ -263,6 +278,10 @@ def _add_feature(vector: list[float], feature: str, weight: float, dim: int) -> 
     index = number % dim
     sign = 1.0 if (number >> 8) & 1 else -1.0
     vector[index] += sign * weight
+
+
+def _fingerprint(text: str) -> str:
+    return hashlib.blake2b(text.encode("utf-8"), digest_size=8).hexdigest()
 
 
 def _node_text(node: Any) -> str:

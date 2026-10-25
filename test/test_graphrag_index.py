@@ -460,3 +460,34 @@ def test_full_offline_index_pipeline(tmp_path):
     assert len(store.chunks) == len(index.chunks)
     assert config.graph_path.is_file()
     assert config.vectors_path.is_file()
+
+
+def test_vectors_are_reused_only_while_their_text_is_unchanged(tmp_path):
+    config = graph_config(tmp_path)
+    config.ensure_dirs()
+    graph = Graph(
+        nodes={"asthma": GraphNode("asthma", "Asthma", "DISEASE", 3)},
+        edges=[],
+        chunk_count=1,
+        fact_count=0,
+    )
+    index = ChunkIndex(
+        articles=[{"id": "asthma", "title": "Asthma", "chunks": []}],
+        chunks=[Chunk("asthma::1", "asthma", "Asthma", 1, "Asthma text.")],
+        target=400,
+        overlap=60,
+    )
+    first = build_vectors(config, graph, index, None)
+
+    # Overwrite the stored node vector: an unchanged rebuild must reuse it.
+    payload = json.loads(config.vectors_path.read_text(encoding="utf-8"))
+    payload["nodes"]["asthma"] = [0.0] * first.dim
+    config.vectors_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    second = build_vectors(config, graph, index, None)
+    assert second.nodes["asthma"] == [0.0] * first.dim
+
+    # Same key, different text: the stale vector must be replaced.
+    graph.nodes["asthma"].display = "Asthma (renamed)"
+    third = build_vectors(config, graph, index, None)
+    assert third.nodes["asthma"] != [0.0] * first.dim
