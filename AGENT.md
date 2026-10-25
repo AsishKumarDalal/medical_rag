@@ -52,7 +52,7 @@ If it is not in that file, the next agent does not know it.
 ## Code rules
 
 - Python 3.11+, type hints, `pytest` tests in `test/`. No new dependency without a
-  reason stated in the PR.
+  reason stated in the commit.
 - Exactly one module talks to the model (`harness/llm.py` for the harness,
   `graphrag/llm.py` for the pipeline). Nothing else imports a provider SDK.
 - Model output is a suggestion: validate, cap, log. Never trust parsed JSON blindly.
@@ -62,9 +62,9 @@ If it is not in that file, the next agent does not know it.
 
 ## Verification
 
-- Run the tests covering the change, plus `pytest -q`, before opening the PR.
+- Run the tests covering the change, plus `pytest -q`, before committing.
 - Exercise the real path (CLI turn, scripted run, tool round-trip), not only imports.
-- Report any failing, skipped, or unrun check in the PR and in the final message.
+- Report any failing, skipped, or unrun check in the commit body and the final message.
 
 ## Safety
 
