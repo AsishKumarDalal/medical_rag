@@ -212,12 +212,13 @@ class Chat:
 
 
 def _rag_backend() -> RagBackend | None:
-    """Wire the pipeline if it is importable; the stub stays honest if not."""
+    """Wire the pipeline if it is importable and configured; otherwise stay honest."""
     try:
         from graphrag import GraphRagBackend  # type: ignore[import-not-found]
+
+        return GraphRagBackend.from_env()
     except Exception:
         return None
-    return GraphRagBackend.from_env()
 
 
 def build_tools(config: Config) -> ToolRegistry:

@@ -119,7 +119,7 @@ def test_rag_stub_says_the_corpus_is_not_ready():
     )
 
     assert not result.ok
-    assert "not wired yet" in result.content
+    assert "not wired" in result.content
 
 
 @dataclass

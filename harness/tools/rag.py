@@ -1,8 +1,8 @@
-"""The RAG tool: the harness's first real tool.
+"""The RAG tool: the harness's only real tool.
 
-The pipeline does not exist yet (phase G3), so the tool ships as a stub with its
-final signature. That lets the system prompt, the registry and the loop be written
-once against the contract they will keep.
+``GraphRagBackend`` is injected so tests can exercise the tool contract without a
+model or network. When no backend is supplied the tool reports that the index is
+not wired, rather than pretending an answer exists.
 """
 
 from __future__ import annotations
@@ -61,8 +61,8 @@ class SearchMedicalLiteratureTool(Tool):
             return ToolResult.error("search_medical_literature: 'question' must not be empty")
         if self._backend is None:
             return ToolResult.error(
-                "search_medical_literature: the retrieval pipeline is not wired yet "
-                "(phase G3); no corpus is available"
+                "search_medical_literature: the retrieval pipeline is not wired; "
+                "no corpus is available"
             )
 
         mode = arguments.get("mode", "auto")
@@ -74,7 +74,30 @@ class SearchMedicalLiteratureTool(Tool):
 
         text = _render(result)
         citations = list(getattr(result, "citations", []) or [])
-        return ToolResult.success(text, data={"citations": citations, "mode": getattr(result, "mode", mode)})
+        return ToolResult.success(
+            text,
+            data={
+                "citations": citations,
+                "evidence_ids": _evidence_ids(result),
+                "mode": getattr(result, "mode", mode),
+                "abstained": bool(getattr(result, "abstained", False)),
+            },
+        )
+
+
+def _evidence_ids(result: Any) -> list[str]:
+    """Stable ids the answer was built from, without sending full evidence back."""
+    ids: list[str] = []
+    for item in getattr(result, "evidence", []) or []:
+        candidates: list[str] = []
+        if item.get("kind") == "fact":
+            candidates.extend(str(chunk) for chunk in item.get("source_chunks", []) or [])
+        elif item.get("id") is not None:
+            candidates.append(str(item["id"]))
+        for candidate in candidates:
+            if candidate not in ids:
+                ids.append(candidate)
+    return ids
 
 
 def _render(result: Any) -> str:
