@@ -27,5 +27,5 @@ you>
 
 ## Not shown here
 
-A turn that calls `search_medical_literature` — the pipeline arrives in G1–G3.
-The tool currently answers "the retrieval pipeline is not wired yet (phase G3)".
+This run did not call the RAG tool. The live question → tool call → cited answer
+round-trip is recorded after G3 in `test/docs/g3-integration.md`.

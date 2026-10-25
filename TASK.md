@@ -1,17 +1,22 @@
 # Active task
 
-## G0 — Test corpus (`goal.md` Part B, phase G0)
+## G1 — Indexing pipeline (`goal.md` Part B, phase G1)
 
-- [ ] `test/data/test_data_fetch.py`: 24 medical topics from the Wikipedia extracts API
-- [ ] Deterministic cleaning, slug ids, per-article files + manifest with sha256
-- [ ] Polite fetch: retries, pause, user agent, `--limit`, `--force`
-- [ ] `test/test_fetch.py`: offline parse/clean/slug tests over a committed fixture
-- [ ] Fetch the corpus for real and record counts in `test/docs/`
+- [x] I1/I2: `corpus.py` + `chunk.py` — load corpus, deterministic ~1000-char chunks
+- [x] I3/I4: `extract.py` — per-chunk LLM extraction, JSON salvage, JSONL checkpoint, resume
+- [x] I5/I6: `validate.py` + `normalize.py` — rejection gate, stable entity keys
+- [x] I7/I8: `graph.py` — aggregate mentions/source chunks, majority type backfill
+- [x] I9: `resolve.py` — blocking → fuzzy → union-find → LLM judge → canonical rebuild + audit
+- [x] I10: `communities.py` — weighted label propagation + one summary per community
+- [x] I11: `embed.py` — node/fact/chunk vectors, backend metadata, resumable
+- [x] `build.py` stage CLI + `graphrag/llm.py` single model doorway
+- [x] Offline tests for every stage with a stub LLM and a mini fixture corpus
+- [ ] Live mini run on at least 3 real articles, artifacts recorded in `graphrag/docs/g1.md`
 
-Done when: `python test/data/test_data_fetch.py` produces 20–30 articles and an
-offline test proves the parsing without the network.
+Done when `python -m graphrag.build --stage all` rebuilds graph, communities and
+vectors from the checkpoint, and the offline suite is green.
 
 ---
 
 _Done: H1 (loop), H2 (tools), H3 (context), H4 (sessions), H5 (security),
-H6 (CLI)._
+H6 (CLI), G0 (corpus: 24 articles, 260,462 chars)._

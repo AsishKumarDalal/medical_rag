@@ -7,6 +7,7 @@ measurement before any upgrade.
 - **Scope and phases:** [`goal.md`](goal.md)
 - **How work is done here:** [`AGENT.md`](AGENT.md)
 - **Current task:** [`TASK.md`](TASK.md)
+- **Living status:** [`progress.md`](progress.md)
 - **Durable learnings:** [`logs-and-fixes.md`](logs-and-fixes.md)
 - **GraphRAG specification:** [`docs/rag_docs/`](docs/rag_docs/) (upstream, read-only)
 
@@ -14,16 +15,19 @@ measurement before any upgrade.
 
 ```
 harness/    agent loop, tools, context/compression, sessions, security, CLI
+  docs/     one completion record per phase: h1.md … h6.md
 graphrag/   indexing pipeline (I1–I11) and query pipeline (Q0–QG)
-test/       test scripts; test/data/ holds the corpus fetch script
-docs/       design notes and the upstream GraphRAG spec
+  docs/     one completion record per phase: g0.md … g4.md
+test/       tests, fixtures, corpus fetcher and G4 evaluation
+docs/       design notes, the upstream spec, and docs/eval.md
 ```
 
 ## Status
 
-**H1 — agentic loop: done.** The loop calls tools, feeds results back and stops on
-an answer, an iteration cap or a model failure. Verified live against the dev
-endpoint: see [`test/docs/smoke-h1.md`](test/docs/smoke-h1.md). Next is H2 (tools).
+The harness phases H1–H6 are complete and tested. The GraphRAG pipeline G0–G4 is
+implemented; G0 fetched 24 medical articles and the G1–G4 live mini run is recorded
+in [`progress.md`](progress.md) and the phase docs. The offline suite uses a stub
+model and never needs the network.
 
 ## Running it
 
@@ -31,10 +35,29 @@ endpoint: see [`test/docs/smoke-h1.md`](test/docs/smoke-h1.md). Next is H2 (tool
 uv venv .venv && uv pip install --python .venv/bin/python -r requirements.txt
 cp .env.example .env          # then set LLM_BASE_URL / LLM_MODEL
 .venv/bin/python -m pytest -q # offline, stubbed model
-.venv/bin/python test/smoke_h1.py   # live tool round-trip
+
+# corpus + index (the live extraction is checkpointed and resumable)
+.venv/bin/python test/data/test_data_fetch.py --pause 2
+.venv/bin/python -m graphrag.build --stage extract --limit 40
+.venv/bin/python -m graphrag.build --stage graph
+.venv/bin/python -m graphrag.build --stage resolve
+.venv/bin/python -m graphrag.build --stage communities
+GRAPHRAG_CORPUS=test/data/corpus_mini .venv/bin/python -m graphrag.build --stage embed
+
+# ask directly, or through the harness terminal
+.venv/bin/python -m graphrag.ask --mode auto "What is asthma?"
+.venv/bin/python -m harness --once "What is asthma?"
+
+# G4 evaluation: deterministic baseline, then a small live smoke subset
+.venv/bin/python test/eval/run_eval.py --offline --corpus test/data/corpus_mini
+.venv/bin/python test/eval/run_eval.py --live --ids L01 L06 U01 \
+  --corpus test/data/corpus_mini
 ```
+
+The dev endpoint is chat-only: without an embeddings route the pipeline stores
+deterministic hash vectors and records that backend in `vectors.json`.
 
 ## Requirements
 
-Python 3.11+, an OpenAI-compatible chat endpoint, `pytest`, and — after
-`test/data/test_data_fetch.py` exists — outbound HTTP access to the article sources.
+Python 3.11+, an OpenAI-compatible chat endpoint, `pytest`, and outbound HTTP
+access to the article sources for a fresh corpus.
