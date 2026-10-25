@@ -23,6 +23,7 @@ from graphrag.resolve import (
     rebuild_graph,
     resolve_entities,
     token_overlap,
+    write_merge_audit,
 )
 from graphrag.validate import validate_record
 
@@ -329,6 +330,26 @@ def test_resolution_merges_only_judged_groups_and_audits_skips():
     assert "Tesla Motors" in result.graph.nodes["tesla"].aliases
     assert any(skip["reason"] == "maker/made edge" for skip in result.log["skipped"])
     assert any(verdict["verdict"] == "merge" for verdict in result.log["verdicts"])
+
+
+def test_resolution_writes_one_audit_line_per_candidate(tmp_path):
+    graph = Graph(
+        nodes={
+            "tesla": GraphNode("tesla", "Tesla", "ORGANIZATION", 4),
+            "tesla motors": GraphNode("tesla motors", "Tesla Motors", "ORGANIZATION", 2),
+        },
+        edges=[GraphEdge("tesla", "ACQUIRED", "tesla motors", 1, ["x::1"])],
+        chunk_count=1,
+        fact_count=1,
+    )
+    result = resolve_entities(graph, FakeLLM(judge=[["tesla", "tesla motors"]]), max_batches=5)
+
+    path = write_merge_audit(result, tmp_path / "merge_audit.jsonl")
+    lines = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+    assert len(lines) == len(result.log["verdicts"]) == 1
+    assert lines[0]["verdict"] == "merge"
+    assert lines[0]["generated_at"] == result.log["generated_at"]
 
 
 def test_resolution_does_not_merge_when_judge_fails():

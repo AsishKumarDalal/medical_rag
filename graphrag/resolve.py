@@ -3,15 +3,18 @@
 Blocking and fuzzy scoring *nominate* pairs; they never decide. One LLM call per
 small batch sees names, types, mention counts and real edges. Code validates the
 answer, picks the canonical key by mention count, rebuilds the graph and writes
-every candidate and verdict to ``merge_log.json``.
+every candidate and verdict to ``merge_log.json`` (with ``merge_audit.jsonl`` as
+the append-friendly one-line-per-candidate view of the same verdicts).
 """
 
 from __future__ import annotations
 
 import itertools
+import json
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Iterable
 
 from .graph import Graph, GraphEdge, GraphNode, backfill_types
@@ -132,6 +135,19 @@ def resolve_entities(
         "stats_after": {"nodes": len(rebuilt.nodes), "edges": len(rebuilt.edges)},
     }
     return Resolution(graph=rebuilt, mapping=mapping, log=log)
+
+
+def write_merge_audit(resolution: Resolution, path: str | Path) -> Path:
+    """I9 deliverable: one JSONL line per nominated candidate and its verdict."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    generated_at = resolution.log.get("generated_at")
+    lines = [
+        json.dumps({**verdict, "generated_at": generated_at}, ensure_ascii=False)
+        for verdict in resolution.log.get("verdicts", [])
+    ]
+    target.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    return target
 
 
 def nominate(graph: Graph, *, threshold: float = NOMINATION_THRESHOLD) -> tuple[list[Candidate], list[dict[str, Any]]]:

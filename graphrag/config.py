@@ -114,6 +114,10 @@ class GraphRagConfig:
         return self.artifacts_dir / "merge_log.json"
 
     @property
+    def merge_audit_path(self) -> Path:
+        return self.artifacts_dir / "merge_audit.jsonl"
+
+    @property
     def communities_path(self) -> Path:
         return self.artifacts_dir / "communities.json"
 

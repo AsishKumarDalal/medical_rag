@@ -28,7 +28,7 @@ from .embed import build_vectors
 from .extract import ExtractionStats, extract_chunks, load_records
 from .graph import build_graph, load_graph, save_graph, save_rejections
 from .llm import GraphLLM
-from .resolve import resolve_entities
+from .resolve import resolve_entities, write_merge_audit
 
 STAGES = ("extract", "graph", "resolve", "communities", "embed", "all")
 
@@ -140,10 +140,12 @@ def stage_resolve(config: GraphRagConfig, llm: GraphLLM | None, *, log=lambda li
     resolution = resolve_entities(graph, llm, max_batches=config.judge_max_batches)
     save_graph(resolution.graph, config.graph_path)
     config.merge_log_path.write_text(json.dumps(resolution.log, indent=2) + "\n", encoding="utf-8")
+    write_merge_audit(resolution, config.merge_audit_path)
     log(
         f"[resolve] {resolution.merged} nodes merged; "
         f"{len(graph.nodes)} -> {len(resolution.graph.nodes)} nodes; "
-        f"{len(resolution.log.get('batches', []))} judge batches"
+        f"{len(resolution.log.get('batches', []))} judge batches; "
+        f"{len(resolution.log.get('verdicts', []))} candidates audited"
     )
     return resolution
 
