@@ -35,12 +35,18 @@ If it is not in that file, the next agent does not know it.
 - `test/` — every test script; `test/data/` holds the fetch script and cached corpus
 - `docs/` — design notes; `docs/rag_docs/` is upstream spec, never edit it
 
-## Workflow
+## Git
 
-- `main` must always work. Never commit to `main` directly.
-- One branch and one PR per task: `git switch -c feat/<slug> main` →
-  commit → `gh pr create --fill --base main` → `gh pr merge --merge --delete-branch`.
-- Small imperative commits. Name the goal phase in the PR body.
+- Work on `main` by default. No branch and no PR for ordinary work.
+- Commit messages earn their keep: imperative subject naming the change, then a
+  body saying what was done and why. One commit per coherent step, not per file.
+- Branch **only** when the change can harm code that already works: rewriting the
+  loop, changing a tool contract or the session schema, swapping the model client,
+  dependency upgrades, migrations, or anything you are unsure you can finish.
+  Then `git switch -c <type>/<slug> main`, commit, `gh pr create --base main`,
+  review the diff, `gh pr merge --merge --delete-branch`.
+- A wrong commit on `main` is fixed by a normal revert commit. `main` must always
+  run; never rewrite pushed history.
 - Never commit `.env`, secrets, `test/data/corpus/`, or large dumps.
 
 ## Code rules
