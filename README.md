@@ -36,22 +36,25 @@ uv venv .venv && uv pip install --python .venv/bin/python -r requirements.txt
 cp .env.example .env          # then set LLM_BASE_URL / LLM_MODEL
 .venv/bin/python -m pytest -q # offline, stubbed model
 
-# corpus + index (the live extraction is checkpointed and resumable)
+# corpus + index (the live extraction is checkpointed and resumable). The live
+# run indexes the three-article mini corpus so the index and the extracted
+# checkpoint describe the same 40 chunks; the full corpus stays for G0 checks.
 .venv/bin/python test/data/test_data_fetch.py --pause 2
-.venv/bin/python -m graphrag.build --stage extract --limit 40
+.venv/bin/python test/eval/make_mini_corpus.py
+export GRAPHRAG_CORPUS=test/data/corpus_mini
+.venv/bin/python -m graphrag.build --stage extract
 .venv/bin/python -m graphrag.build --stage graph
 .venv/bin/python -m graphrag.build --stage resolve
 .venv/bin/python -m graphrag.build --stage communities
-GRAPHRAG_CORPUS=test/data/corpus_mini .venv/bin/python -m graphrag.build --stage embed
+.venv/bin/python -m graphrag.build --stage embed
 
 # ask directly, or through the harness terminal
 .venv/bin/python -m graphrag.ask --mode auto "What is asthma?"
 .venv/bin/python -m harness --once "What is asthma?"
 
 # G4 evaluation: deterministic baseline, then a small live smoke subset
-.venv/bin/python test/eval/run_eval.py --offline --corpus test/data/corpus_mini
-.venv/bin/python test/eval/run_eval.py --live --ids L01 L06 U01 \
-  --corpus test/data/corpus_mini
+.venv/bin/python test/eval/run_eval.py --offline
+.venv/bin/python test/eval/run_eval.py --live --ids L01 L06 U01
 ```
 
 The dev endpoint is chat-only: without an embeddings route the pipeline stores
