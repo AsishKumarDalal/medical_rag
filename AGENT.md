@@ -14,15 +14,30 @@ Read `goal.md` first — it is the source of truth for scope. GraphRAG internals
 4. One task at a time. Do not add scope that is not in the task or `goal.md`. If a
    subtask turns out wrong, rewrite it and say why in the commit or PR.
 
-## logs-and-fixes.md (mandatory)
+## logs-and-fixes.md (mandatory — a learning log)
 
-Search it before debugging anything non-obvious. Append an entry after solving:
+Treat it as the project's **learning log**, not a bug tracker. It records every
+thing learned while working here — mistakes, dead ends, environment quirks,
+wrong assumptions, surprising API behaviour, and decisions with their reasons —
+not only bugs that got fixed.
+
+- **Append as you learn, not at the end.** The moment something surprises you or
+  changes what you assumed, write it down — even if the fix is not found yet
+  (`Fixed:` can say "still open"). An unrecorded learning is a lost learning.
+- Search it before debugging anything non-obvious, and before choosing an
+  approach — a dead end already tried must not be retried.
+- One entry per learning, newest at the top. Never edit old entries to be
+  right; append a correction entry instead.
+- Small entries are fine. A two-line trap is worth more than a perfect entry
+  never written.
+
+Format:
 
 ```
 ## YYYY-MM-DD — short title
 Context: what we were doing
 Tried: approach → why it failed
-Fixed: what actually worked
+Fixed: what actually worked (or: still open)
 Do not: the trap to avoid next time
 ```
 

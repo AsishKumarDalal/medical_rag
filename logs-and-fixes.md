@@ -15,6 +15,42 @@ Do not: the trap to avoid next time
 
 ---
 
+## 2026-10-25 — `.env.*` in `.gitignore` silently excluded `.env.example`
+
+Context: committing `.env.example` alongside the ignored local `.env`.
+Tried: `git add .env.example` → the file stayed untracked, no error.
+Fixed: added `!.env.example` after the `.env.*` rule; `git check-ignore -v`
+confirms the exception. `.env` itself stays ignored.
+Do not: assume an ignored file is ignored for the right reason — check with
+`git check-ignore -v <path>` before concluding a file is missing.
+
+## 2026-10-25 — The dev tunnel URL rotates; `.env` goes stale silently
+Context: `LLM_BASE_URL` points at a trycloudflare tunnel that dies and gets a new
+URL whenever the machine restarts the tunnel.
+Tried: nothing — recorded so the next live-run failure is not blamed on the code.
+Fixed: when a live run fails with connection errors, update `LLM_BASE_URL` in
+`.env` first; everything else (model name, `api_key=ollama`) stays the same.
+Do not: debug `harness/llm.py` for a connection error — check the URL.
+
+## 2026-10-25 — Wikipedia returns ONE full extract per request, whatever exlimit says
+
+Context: fetching 24 articles with `titles=A|B|C` and `exlimit=20`.
+Tried: batching titles → the API answers with a warning, "exlimit was too large
+for a whole article extracts request, lowered to 1", and returns a single extract.
+Three batches produced three articles, not 24, with no error.
+Fixed: one request per title. `exintro=1` would allow batches again, but only the
+lead section, which is too thin for a corpus that needs real paragraphs.
+Do not: trust `exlimit` for full extracts; check `count` in the manifest after a run.
+
+## 2026-10-25 — Sequential Wikipedia fetches hit HTTP 429
+
+Context: switching the fetcher to one request per title.
+Tried: 0.5 s pause and 3 attempts → HTTP 429 Too Many Requests after a few titles.
+Fixed: 2 s pause, 4 attempts, honour `Retry-After` else back off 10 s × attempt, and
+keep going when a single title fails. `write_corpus(merge=True)` re-reads the old
+manifest, so a partial run resumes instead of refetching what already landed.
+Do not: retry a 429 immediately — the block gets longer.
+
 ## 2026-10-25 — `python3 -m venv` fails on this machine
 
 Context: creating `.venv` for `openai` + `pytest`.
