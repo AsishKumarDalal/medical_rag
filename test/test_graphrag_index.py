@@ -134,6 +134,18 @@ def test_write_index_serializes_directly_constructed_chunks(tmp_path):
     assert reloaded.chunks[0].text == "Asthma text."
 
 
+def test_parallel_extraction_still_writes_one_checkpoint_record_per_chunk(tmp_path):
+    config = graph_config(tmp_path)
+    index = build_chunk_index(load_corpus(FIXTURE_CORPUS), target=400, overlap=60)
+
+    stats = extract_chunks(index, FakeLLM(), config, limit=4, workers=2)
+
+    assert stats.written == 4
+    records = load_records(config.checkpoint_path)
+    assert len(records) == 4
+    assert len({record["chunk_id"] for record in records}) == 4
+
+
 def test_checkpoint_resumes_and_retries_failed_chunks(tmp_path):
     config = graph_config(tmp_path)
     index = build_chunk_index(load_corpus(FIXTURE_CORPUS), target=400, overlap=60)

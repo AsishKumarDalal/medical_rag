@@ -7,7 +7,7 @@ tool error ("not built yet") rather than a process failure.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import cast
 
 from .config import GraphRagConfig
 from .llm import GraphLLM
@@ -35,7 +35,7 @@ class GraphRagBackend:
                 embed_api_key=self.config.embed_api_key,
             )
         else:
-            self.llm = llm  # type: ignore[assignment]
+            self.llm: GraphLLM | None = cast(GraphLLM | None, llm)
         self._engine: GraphRagEngine | None = None
 
     @classmethod

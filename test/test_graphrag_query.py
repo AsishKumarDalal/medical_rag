@@ -150,6 +150,23 @@ def test_router_failure_defaults_to_local_and_narration_failure_falls_back(tmp_p
     assert "narrator down" in (result.error or "")
 
 
+def test_narrator_refusal_is_an_abstention_even_when_retrieval_found_text(tmp_path):
+    class RefusingLLM:
+        stats = None
+
+        def complete_json(self, **kwargs):
+            return {"route": "LOCAL"}
+
+        def complete_text(self, **kwargs):
+            return "The evidence does not contain this."
+
+    result = fixture_engine(tmp_path, llm=RefusingLLM()).answer("What treats asthma?", k=4)
+
+    assert result.abstained is True
+    assert result.mode == "abstain"
+    assert result.citations == []
+
+
 def test_verification_flags_unknown_citation():
     verification = verify_citations("Asthma is chronic [asthma::1]. It is caused by ghosts [fake::9].", {"asthma::1"})
 

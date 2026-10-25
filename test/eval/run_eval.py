@@ -38,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--live", action="store_true", help="use the configured model endpoint")
     parser.add_argument("--k", type=int, default=8)
     parser.add_argument("--questions", type=Path, default=QUESTIONS_PATH)
+    parser.add_argument("--ids", nargs="+", help="run only these question ids (live smoke)")
     parser.add_argument("--out", type=Path, default=RESULTS_PATH)
     parser.add_argument("--artifacts", type=Path)
     parser.add_argument("--corpus", type=Path)
@@ -63,6 +64,12 @@ def main(argv: list[str] | None = None) -> int:
     engine = GraphRagEngine.load(config, llm)
     payload = json.loads(args.questions.read_text(encoding="utf-8"))
     questions = payload["questions"]
+    if args.ids:
+        wanted = set(args.ids)
+        questions = [item for item in questions if item.get("id") in wanted]
+        missing = wanted - {item.get("id") for item in questions}
+        if missing:
+            parser.error(f"unknown question ids: {', '.join(sorted(missing))}")
     valid_ids = set(engine.chunks) | {
         str(community.get("id")) for community in engine.communities.get("communities", [])
     }

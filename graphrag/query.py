@@ -32,6 +32,7 @@ from .rerank import Reranker, make_reranker
 LOCAL = "local"
 GLOBAL = "global"
 ABSTAIN = "abstain"
+REFUSAL = "the evidence does not contain this"
 CITATION = re.compile(r"\[([A-Za-z0-9_]+(?:::\d+)?)\]")
 GLOBAL_HINTS = (
     "main themes",
@@ -315,6 +316,8 @@ class GraphRagEngine:
         else:
             text = _fallback_local_answer(facts, evidence_chunks)
             narration_error = None
+        if _is_refusal(text):
+            return self._abstain(question, route=LOCAL, started=None)
 
         valid_ids = set(self.chunks) | _community_ids(self.communities)
         citations = _citations(text, valid_ids)
@@ -545,6 +548,8 @@ class GraphRagEngine:
         else:
             text = _fallback_global_answer(evidence)
             error = None
+        if _is_refusal(text):
+            return self._abstain(question, route=GLOBAL, started=None)
         valid_ids = _community_ids(self.communities) | set(self.chunks)
         citations = _citations(text, valid_ids)
         if not citations:
@@ -687,6 +692,10 @@ def _effective(store: VectorStore, threshold: float) -> float:
 
 def _community_ids(communities: dict[str, Any]) -> set[str]:
     return {str(community.get("id")) for community in communities.get("communities", [])}
+
+
+def _is_refusal(text: str) -> bool:
+    return REFUSAL in (text or "").lower()
 
 
 def _content_tokens(text: str) -> set[str]:

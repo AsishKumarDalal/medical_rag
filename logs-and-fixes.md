@@ -15,6 +15,80 @@ Do not: the trap to avoid next time
 
 ---
 
+## 2026-10-25 — A narrator refusal was being converted into a cited answer
+
+Context: Q5 promised an honest "evidence does not contain this" path even when
+retrieval had returned some chunks.
+Tried: checking only whether the answer had citations; an LLM refusal has none,
+so the code appended source ids automatically and returned a confident-looking
+answer.
+Fixed: detect the exact refusal phrase after local narration and global reduction
+and return an abstention with no citations. Added a test with a refusing narrator.
+Do not: treat "no citations" as "add citations"; a refusal is a result, not a
+formatting miss.
+
+## 2026-10-25 — Hash-vector seeds need a lexical guard
+
+Context: testing Q3's "no name seed" fallback with `airway inflammation`.
+Tried: trusting cosine over hash-vector node names with the normal threshold →
+`diabetes` and `wheezing` were seeded at ~0.17 by character-n-gram collisions.
+Fixed: when `vectors.backend` starts with `hash`, keep a vector seed only if the
+question shares a meaningful content word with the node key. Real embedding
+backends keep the pure cosine door.
+Do not: evaluate a lexical fallback as if it were a semantic embedding model.
+
+## 2026-10-25 — Four concurrent extraction calls are not four times faster
+
+Context: measuring whether to parallelise the 333-chunk live extraction.
+Tried: four concurrent `extract_chunk` calls → 684 s wall time for four chunks
+(212–684 s each), versus roughly 55–190 s for one sequential chunk.
+Fixed: kept `--workers` as an explicit option but use one worker for the live run;
+the endpoint is the bottleneck and extra concurrency mostly adds queueing.
+Do not: scale workers before measuring the provider, especially through a tunnel.
+
+## 2026-10-25 — `llm or GraphLLM(...)` silently defeated offline tests
+
+Context: G3 integration test passed `llm=None` to `GraphRagBackend` and took 17 s.
+Tried: assuming `None` meant "no model"; the constructor used `llm or ...` and
+created a live client, so the router/narrator hit the real endpoint.
+Fixed: an explicit `_UNSET` sentinel distinguishes "argument omitted" (build the
+default client) from `llm=None` (offline, deterministic path).
+Do not: use truthiness to express an optional dependency when `None` is a valid
+configured value.
+
+## 2026-10-25 — ChunkIndex serialization lost directly constructed chunks
+
+Context: G3 built a tiny `ChunkIndex(chunks=[...])` and saved it with
+`write_index`; the reloaded engine had zero chunks and rejected every citation.
+Tried: assuming `to_dict()` serialized the `chunks` field; it only serialized the
+per-article records, and the test fixture's article records had no `chunks` list.
+Fixed: `to_dict()` now fills each article's chunk list from the authoritative
+top-level `self.chunks` when it is missing. The on-disk shape is unchanged.
+Do not: test a loader with an object whose in-memory and serialized shapes differ.
+
+## 2026-10-25 — The dev endpoint has chat only, no embeddings endpoint
+
+Context: G1's I11 needs node/fact/chunk vectors.
+Tried: `client.embeddings.create(model="nomic-embed-text", ...)` → HTTP 404
+"model not found"; `/v1/models` lists only the GGUF chat model.
+Fixed: `graphrag/embed.py` has two backends behind one interface. If
+`EMBED_BASE_URL`/`EMBED_MODEL` are set it calls an OpenAI-compatible
+`/embeddings`; otherwise it falls back to a deterministic, dependency-free
+hashing embedder stored with `backend="hash"` in `vectors.json`. Query stages
+never need to know which produced the vectors.
+Do not: assume the chat endpoint also serves embeddings because it speaks the
+OpenAI API. Check `/v1/models` first.
+
+## 2026-10-25 — This reasoning model returns empty content when max_tokens is tiny
+
+Context: probing the endpoint with `max_tokens=16`.
+Tried: one-line "Reply with exactly OK" → `finish_reason=stop`, content `""`,
+16 completion tokens consumed by reasoning.
+Fixed: give extraction/narration at least ~800–1,200 output tokens; the model
+spends tokens on reasoning before the answer. H1's 4,096 default is safe.
+Do not: diagnose an empty answer as a broken loop before checking the
+completion cap — reasoning models can think the whole budget away.
+
 ## 2026-10-25 — `.env.*` in `.gitignore` silently excluded `.env.example`
 
 Context: committing `.env.example` alongside the ignored local `.env`.
