@@ -3,7 +3,7 @@
 Living status of this repo. Updated when a phase or meaningful feature completes.
 Task protocol and detailed learnings live in `TASK.md` and `logs-and-fixes.md`.
 
-- **Last updated:** 2026-10-25
+- **Last updated:** 2026-10-28
 - **Current phase:** G1 — indexing (live mini run **paused: dev endpoint is down**)
 - **Next:** restore `LLM_BASE_URL` (the tunnel answers HTTP 530), then
   `.venv/bin/python -m graphrag.build --stage extract --retry-failed` and the
@@ -40,6 +40,7 @@ harness/            H1–H6 agent harness
   security.py       H5 allowlist, bounds, untrusted-text wrapping, redaction
   cli.py            H6 REPL; wires the real RAG backend when configured
   tools/            registry + echo + real search_medical_literature
+tui/                minimal curses UI; background worker, transcript, input history
 graphrag/           G0–G4 pipeline
   docs/             one record per phase: g0.md … g4.md
   corpus/chunk/     I1–I2 deterministic 1,000-char corpus chunks
@@ -62,6 +63,8 @@ test/               pytest suite and evaluation
   GraphRAG tests use stub LLMs and deterministic embeddings (no network).
 - **Live H1–H6:** loop smoke (`test/docs/smoke-h1.md`), context demo
   (`test/docs/h3-context.md`), CLI run (`test/docs/h6-cli.md`).
+- **TUI:** `python -m tui` smoke-tested in a PTY (startup, `/help`, `/exit`);
+  `test/test_tui.py` covers structured events and transcript layout.
 - **G0 live:** 24/24 articles, 260,462 characters; manifest hash recorded in
   `graphrag/docs/g0.md`.
 - **G1 live (paused):** the mini index is built — 40 chunks from Alzheimer's

@@ -16,6 +16,7 @@ measurement before any upgrade.
 ```
 harness/    agent loop, tools, context/compression, sessions, security, CLI
   docs/     one completion record per phase: h1.md … h6.md
+tui/        minimal curses front end; same sessions, tools and loop
 graphrag/   indexing pipeline (I1–I11) and query pipeline (Q0–QG)
   docs/     one completion record per phase: g0.md … g4.md
 test/       tests, fixtures, corpus fetcher and G4 evaluation
@@ -51,6 +52,9 @@ export GRAPHRAG_CORPUS=test/data/corpus_mini
 # ask directly, or through the harness terminal
 .venv/bin/python -m graphrag.ask --mode auto "What is asthma?"
 .venv/bin/python -m harness --once "What is asthma?"
+
+# full-screen terminal (stdlib curses; no new dependencies)
+.venv/bin/python -m tui
 
 # G4 evaluation: deterministic baseline, then a small live smoke subset
 .venv/bin/python test/eval/run_eval.py --offline
