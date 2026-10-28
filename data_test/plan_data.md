@@ -213,7 +213,8 @@ huggingface-cli upload <your-username>/medical-graphrag-data-test \
 ```
 
 Important:
-- Do NOT upload `.env` or secrets.
+- Do NOT upload `.env`, secrets or the `.py` helper scripts; the mirror is data
+  only (`corpus/` and `artifacts/`).
 - Include a `README.md` in the dataset describing:
   - corpus size (articles, chars, chunks)
   - model file name
