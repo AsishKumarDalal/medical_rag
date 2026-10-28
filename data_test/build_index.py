@@ -23,6 +23,10 @@ if not PYTHON.is_file():
 
 def env() -> dict[str, str]:
     e = dict(os.environ)
+    # Keep Kaggle's system sitecustomize out of the venv interpreter.
+    e.pop("PYTHONPATH", None)
+    e.pop("UV_SYSTEM_PYTHON", None)
+    e["PYTHONNOUSERSITE"] = "1"
     e.setdefault("GRAPHRAG_CORPUS", str(DATA_TEST / "corpus"))
     e.setdefault("GRAPHRAG_ARTIFACTS", str(DATA_TEST / "artifacts"))
     return e

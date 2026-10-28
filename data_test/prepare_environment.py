@@ -12,6 +12,7 @@ It will:
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +25,9 @@ VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
 def clean_env() -> dict[str, str]:
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
+    # Kaggle sets UV_SYSTEM_PYTHON=true, which makes `uv venv` warn and can make
+    # `uv pip` ignore the venv we are explicitly targeting.
+    env.pop("UV_SYSTEM_PYTHON", None)
     env["PYTHONNOUSERSITE"] = "1"
     return env
 
@@ -33,24 +37,39 @@ def run(cmd: list[str]) -> int:
     return subprocess.call(cmd, cwd=str(ROOT), env=clean_env())
 
 
+def uv_binary() -> str | None:
+    return shutil.which("uv")
+
+
 def create_venv() -> None:
     if VENV_PYTHON.is_file():
         print("Virtual environment already exists.", flush=True)
-        ensure_pip()
-        return
-    # Prefer uv if available. --seed installs pip/setuptools/wheel.
-    try:
-        subprocess.check_call(["uv", "venv", "--seed", str(ROOT / ".venv")], cwd=str(ROOT), env=clean_env())
-        ensure_pip()
-        return
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        pass
-    run([sys.executable, "-m", "venv", str(ROOT / ".venv")])
+    else:
+        # Prefer uv if available. --seed installs pip/setuptools/wheel.
+        try:
+            subprocess.check_call(
+                ["uv", "venv", "--seed", str(ROOT / ".venv")],
+                cwd=str(ROOT),
+                env=clean_env(),
+            )
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            run([sys.executable, "-m", "venv", str(ROOT / ".venv")])
     ensure_pip()
+    bootstrap_wrapt()
 
 
 def ensure_pip() -> None:
     """Make sure the venv has pip, even if it was created by a bare `uv venv`."""
+    uv = uv_binary()
+    if uv:
+        # uv installs into the venv without starting its interpreter, so Kaggle's
+        # system sitecustomize cannot fail before pip runs.
+        subprocess.call(
+            [uv, "pip", "install", "--python", str(VENV_PYTHON), "-q", "pip"],
+            cwd=str(ROOT),
+            env=clean_env(),
+        )
+        return
     if subprocess.call(
         [str(VENV_PYTHON), "-m", "pip", "--version"],
         stdout=subprocess.DEVNULL,
@@ -59,40 +78,40 @@ def ensure_pip() -> None:
     ) == 0:
         return
     print("pip missing in venv; bootstrapping...", flush=True)
-    # Try uv first (does not need pip inside the venv)
-    try:
-        subprocess.check_call(
-            ["uv", "pip", "install", "--python", str(VENV_PYTHON), "pip"],
-            cwd=str(ROOT),
-            env=clean_env(),
-        )
-        return
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        pass
-    # Fallback to ensurepip
-    subprocess.call([str(VENV_PYTHON), "-m", "ensurepip", "--upgrade"])
+    subprocess.call([str(VENV_PYTHON), "-m", "ensurepip", "--upgrade"], env=clean_env())
+
+
+def install_packages(args: list[str]) -> int:
+    """Install into the venv, preferring uv so the venv interpreter is not started."""
+    uv = uv_binary()
+    if uv:
+        cmd = [uv, "pip", "install", "--python", str(VENV_PYTHON), *args]
+    else:
+        cmd = [str(VENV_PYTHON), "-m", "pip", "install", *args]
+    return run(cmd)
+
+
+def bootstrap_wrapt() -> None:
+    """Install wrapt before any venv Python call.
+
+    Kaggle's system ``sitecustomize`` imports wrapt; when it is missing, every
+    venv interpreter prints ``ModuleNotFoundError: No module named 'wrapt'``
+    before running the real command. uv installs it without starting Python.
+    """
+    if install_packages(["-q", "wrapt"]) != 0:
+        print("warning: could not preinstall wrapt (sitecustomize may be noisy)", flush=True)
 
 
 def install_deps() -> None:
-    pip = [str(VENV_PYTHON), "-m", "pip"]
-    run(pip + ["install", "-q", "-r", "requirements.txt"])
-    run(
-        pip
-        + [
-            "install",
-            "-q",
-            "-U",
-            "huggingface_hub",
-            "sentence-transformers",
-            "fastapi",
-            "uvicorn",
-            "wrapt",
-        ]
-    )
+    install_packages(["-q", "-r", "requirements.txt"])
+    install_packages(["-q", "-U", "huggingface_hub", "wrapt"])
+    # The default Ollama path does not use sentence-transformers or llama-cpp:
+    # installing them pulls torch / compiles C++ and was the slow step on Kaggle.
+    if os.environ.get("USE_LOCAL_MODELS", "").strip() != "1":
+        return
+    install_packages(["-q", "-U", "sentence-transformers", "fastapi", "uvicorn"])
     # llama-cpp-python may need a wheel; try, but do not fail the whole setup if it errors
-    try:
-        run(pip + ["install", "-q", "-U", "llama-cpp-python"])
-    except Exception:
+    if install_packages(["-q", "-U", "llama-cpp-python"]) != 0:
         print("llama-cpp-python install failed; chat server may be unavailable.", flush=True)
 
 
@@ -114,10 +133,11 @@ def get_hf_token() -> str:
 
 def write_env() -> None:
     env_path = ROOT / ".env"
-    lines = [
+    defaults = [
         f'GRAPHRAG_CORPUS={DATA_TEST / "corpus"}',
         f'GRAPHRAG_ARTIFACTS={DATA_TEST / "artifacts"}',
         "LLM_BASE_URL=http://127.0.0.1:11434/v1",
+        "LLM_API_KEY=ollama",
         "LLM_MODEL=qwen3-4b-instruct-2507",
         "LLM_MAX_TOKENS=4096",
         "HARNESS_CONTEXT_WINDOW=50000",
@@ -128,29 +148,34 @@ def write_env() -> None:
     ]
     token = get_hf_token()
     if token:
-        lines.append(f"HF_TOKEN={token}")
-    if not env_path.is_file():
-        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        print(f"Wrote {env_path}", flush=True)
-        return
-    # Keep the existing file, but add HF_TOKEN if it is missing and we have one.
-    text = env_path.read_text(encoding="utf-8")
-    changed = False
-    if token and "HF_TOKEN=" not in text:
-        if text and not text.endswith("\n"):
-            text += "\n"
-        text += f"HF_TOKEN={token}\n"
-        changed = True
-        print(f"Added HF_TOKEN to {env_path}", flush=True)
+        defaults.append(f"HF_TOKEN={token}")
+
+    existing = env_path.read_text(encoding="utf-8").splitlines() if env_path.is_file() else []
     # Upgrade the old default model name if it is still there.
-    if "LLM_MODEL=qwen3:4b" in text:
-        text = text.replace("LLM_MODEL=qwen3:4b", "LLM_MODEL=qwen3-4b-instruct-2507")
-        changed = True
-        print(f"Updated LLM_MODEL in {env_path}", flush=True)
-    if changed:
-        env_path.write_text(text, encoding="utf-8")
-    else:
-        print(f".env already exists at {env_path}; leaving it unchanged.", flush=True)
+    upgraded = [
+        "LLM_MODEL=qwen3-4b-instruct-2507" if line.strip() == "LLM_MODEL=qwen3:4b" else line
+        for line in existing
+    ]
+    model_upgraded = upgraded != existing
+    existing = upgraded
+
+    present = {
+        line.partition("=")[0].strip()
+        for line in existing
+        if line.strip() and not line.lstrip().startswith("#") and "=" in line
+    }
+    added = [line for line in defaults if line.partition("=")[0].strip() not in present]
+    if not added and not model_upgraded:
+        print(f".env already has all managed keys at {env_path}.", flush=True)
+        return
+    # Merge rather than clobber: keep every user value that is already there.
+    env_path.write_text("\n".join(existing + added) + "\n", encoding="utf-8")
+    details = []
+    if added:
+        details.append("added: " + ", ".join(line.partition("=")[0] for line in added))
+    if model_upgraded:
+        details.append("model=qwen3-4b-instruct-2507")
+    print(f"Updated {env_path} ({'; '.join(details)})", flush=True)
 
 
 def main() -> int:

@@ -41,7 +41,6 @@ def main() -> int:
         repo_type="dataset",
         local_dir=str(DATA_TEST),
         token=token,
-        resume_download=True,
     )
     print("Download complete.")
     return 0

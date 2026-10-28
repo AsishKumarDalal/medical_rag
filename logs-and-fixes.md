@@ -15,6 +15,26 @@ Do not: the trap to avoid next time
 
 ---
 
+## 2026-10-28 — Kaggle venv bootstrap: wrapt, missing LLM_API_KEY, heavy optional deps
+
+Context: running `data_test/prepare_environment.py` on Kaggle; the install was
+cancelled while pip was pulling sentence-transformers/torch.
+Tried: rerunning with the same script → every venv Python start printed
+`ModuleNotFoundError: No module named 'wrapt'` because Kaggle's system
+`sitecustomize.py` imports wrapt before user code; `uv` also warned about
+`--system` because Kaggle exports `UV_SYSTEM_PYTHON=true`.
+Fixed: create the venv with uv, install `wrapt` via `uv pip --python` before any
+venv Python call, and drop `UV_SYSTEM_PYTHON`/`PYTHONPATH` in the sanitized env.
+The generated `.env` now merges missing keys, including `LLM_API_KEY=ollama`
+(previously absent, so every `graphrag.build` exited with "LLM_API_KEY is not
+set") and upgrades the old `qwen3:4b` name to `qwen3-4b-instruct-2507`.
+`sentence-transformers`, `fastapi`, `uvicorn` and `llama-cpp-python` are only
+installed for `USE_LOCAL_MODELS=1`; the default Ollama path no longer pulls
+torch. Also removed `resume_download`/`local_dir_use_symlinks` from
+huggingface_hub calls (removed in hub 2.x).
+Do not: install the local-model stack for the Ollama path, or leave a stale
+`.env` that predates `LLM_API_KEY` — config loading fails before any stage runs.
+
 ## 2026-10-25 — The dev tunnel died mid-extraction (HTTP 530)
 
 Context: the 40-chunk G1 live run; chunk `alzheimer_s_disease::8` sat in flight for

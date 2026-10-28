@@ -23,6 +23,14 @@ if not PYTHON.is_file():
     PYTHON = Path(sys.executable)
 
 
+def clean_env() -> dict[str, str]:
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    env.pop("UV_SYSTEM_PYTHON", None)
+    env["PYTHONNOUSERSITE"] = "1"
+    return env
+
+
 def wait_ready(url: str, timeout: int = 120) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -65,6 +73,7 @@ def main() -> int:
         chat_proc = subprocess.Popen(
             [str(PYTHON), "-m", "llama_cpp.server", "--model", args.model, "--host", "127.0.0.1", "--port", str(args.chat_port)],
             cwd=str(ROOT),
+            env=clean_env(),
         )
         children.append(chat_proc)
         print(f"Started chat server on port {args.chat_port}", flush=True)
@@ -79,6 +88,7 @@ def main() -> int:
     embed_proc = subprocess.Popen(
         [str(PYTHON), str(DATA_TEST / "embedding_server.py"), "--model", args.embed_model, "--port", str(args.embed_port)],
         cwd=str(ROOT),
+        env=clean_env(),
     )
     children.append(embed_proc)
     print(f"Started embedding server on port {args.embed_port}", flush=True)

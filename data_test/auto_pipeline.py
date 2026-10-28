@@ -40,6 +40,7 @@ def clean_env() -> dict[str, str]:
     # Kaggle injects a system sitecustomize via PYTHONPATH that can break venv
     # interpreters; the venv does not need it.
     env.pop("PYTHONPATH", None)
+    env.pop("UV_SYSTEM_PYTHON", None)
     env["PYTHONNOUSERSITE"] = "1"
     return env
 
@@ -56,7 +57,7 @@ def ensure_module(name: str, package: str | None = None) -> None:
     except ImportError:
         pkg = package or name
         print(f"Installing missing module: {pkg}", flush=True)
-        subprocess.check_call([str(PYTHON), "-m", "pip", "install", "-q", pkg])
+        subprocess.check_call([str(PYTHON), "-m", "pip", "install", "-q", pkg], env=clean_env())
 
 
 def download_file_hf(repo_id: str, filename: str, local_dir: Path) -> None:
@@ -70,8 +71,6 @@ def download_file_hf(repo_id: str, filename: str, local_dir: Path) -> None:
         filename=filename,
         repo_type="model",
         local_dir=str(local_dir),
-        local_dir_use_symlinks=False,
-        resume_download=True,
     )
 
 
@@ -102,7 +101,6 @@ def download_embed_model() -> None:
     snapshot_download(
         repo_id="BAAI/bge-small-en-v1.5",
         local_dir=str(embed_dir),
-        resume_download=True,
     )
 
 
@@ -335,7 +333,7 @@ def push_dataset(repo_name: str | None) -> int:
         folder_path=str(DATA_TEST),
         repo_id=repo_id,
         repo_type="dataset",
-        ignore_patterns=[".prepared", "__pycache__/*", "*.pyc"],
+        ignore_patterns=[".prepared", "__pycache__/*", "*.pyc", "*.log"],
     )
     print(f"Uploaded: https://huggingface.co/datasets/{repo_id}", flush=True)
     return 0
@@ -344,33 +342,50 @@ def push_dataset(repo_name: str | None) -> int:
 MARKER = DATA_TEST / ".prepared"
 
 
+def load_env() -> None:
+    env_file = ROOT / ".env"
+    if not env_file.is_file():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].lstrip()
+        key, sep, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if not sep or not key:
+            continue
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+
+
 def ensure_environment() -> None:
     os.environ.setdefault("USE_OLLAMA", "1")
     venv_python = ROOT / ".venv" / "bin" / "python"
-    needs_prepare = not MARKER.is_file()
+    needs_prepare = not MARKER.is_file() or not venv_python.is_file()
     if os.environ.get("USE_OLLAMA", "").strip() == "1" and not shutil.which("ollama"):
         needs_prepare = True
     if needs_prepare:
         py = venv_python if venv_python.is_file() else Path(sys.executable)
         print("Preparing environment...", flush=True)
         subprocess.check_call([str(py), str(DATA_TEST / "prepare_environment.py")], env=clean_env())
-        if not venv_python.is_file():
-            os.execv(str(venv_python), [str(venv_python)] + sys.argv)
+    # Make sure the rest of the pipeline runs under the venv, even when the
+    # script was started with the system interpreter.
+    in_venv = Path(sys.prefix).resolve() == (ROOT / ".venv").resolve()
+    if venv_python.is_file() and not in_venv:
+        os.execv(
+            str(venv_python),
+            [str(venv_python), str(Path(__file__).resolve()), *sys.argv[1:]],
+        )
 
 
 def main() -> int:
+    load_env()
     ensure_environment()
-
-    # Load .env if present
-    env_file = ROOT / ".env"
-    if env_file.is_file():
-        for line in env_file.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            key, sep, value = line.partition("=")
-            if sep and key not in os.environ:
-                os.environ[key] = value
+    load_env()  # pick up keys that prepare_environment just wrote
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--min-articles", type=int, default=50)
@@ -385,15 +400,12 @@ def main() -> int:
     parser.add_argument("--repo-id", default=None, help="Hugging Face dataset repo, e.g. user/medical-graphrag-data-test")
     args = parser.parse_args()
 
-    # 1. prerequisites
-    ensure_module("huggingface_hub")
-    ensure_module("requests", "requests")
-
     # 1.5 Ollama (optional)
     setup_ollama()
 
     # 2. models
     if not args.skip_models and os.environ.get("USE_OLLAMA", "").strip() != "1":
+        ensure_module("huggingface_hub")
         download_model()
         download_embed_model()
 

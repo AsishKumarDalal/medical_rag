@@ -78,6 +78,10 @@ test/               pytest suite and evaluation
 
 - `python3 -m venv` is broken on this machine (no `ensurepip`); `.venv` was built
   with `uv`.
+- `data_test/auto_pipeline.py` defaults to local Ollama (`qwen3-4b-instruct-2507`
+  for chat, `nomic-embed-text` for embeddings). Kaggle's system `sitecustomize`
+  imports `wrapt`, so the venv must have it before any venv Python call; this is
+  bootstrapped by `prepare_environment.py`.
 - The dev tunnel URL rotates; update `LLM_BASE_URL` in `.env` when it dies.
 - The endpoint is chat-only (no `/embeddings`); the index uses the documented
   deterministic hash embedder unless `GRAPHRAG_EMBED_MODEL` is configured.
