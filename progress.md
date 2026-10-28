@@ -4,11 +4,26 @@ Living status of this repo. Updated when a phase or meaningful feature completes
 Task protocol and detailed learnings live in `TASK.md` and `logs-and-fixes.md`.
 
 - **Last updated:** 2026-10-28
-- **Current phase:** G1 — indexing (live mini run **paused: dev endpoint is down**)
-- **Next:** restore `LLM_BASE_URL` (the tunnel answers HTTP 530), then
-  `.venv/bin/python -m graphrag.build --stage extract --retry-failed` and the
-  `graph`/`resolve`/`communities`/`embed` stages; then live G2 queries, G3 tool
-  round-trip and the G4 evaluation run.
+- **Current phase:** G1 live indexing on Kaggle via `data_test/auto_pipeline.py`
+  (52 articles, 725 chunks); extraction stopped at **69/725** to add crash-safe
+  HF checkpoints.
+- **Next:** merge PR #2, resume without `--force`, and confirm the first hourly
+  snapshot at `sddfhy546y/medical-graphrag-data-test`; then live G2 queries, G3
+  tool round-trip and the G4 evaluation run.
+
+## Data_test Kaggle run (2026-10-28)
+
+- Stopped the full run at **69 chunks / 1,067 triples**; artifacts are in
+  `data_test/artifacts/` and resume without `--force`.
+- `auto_pipeline.py` now writes `artifacts/progress.json` and uploads a snapshot
+  immediately and every `HF_CHECKPOINT_SECONDS` (default **3600**) while
+  indexing. It stops the uploader before verify/final push and excludes
+  `models/`, `embeddings/`, logs and `.prepared`.
+- Checkpoint + upload path tested against a scratch HF repo (`progress.json`
+  round-trip, SHA match), then the scratch repo was deleted. Offline suite:
+  **140 passed**.
+- Remaining: merge PR #2, resume the run, confirm the first snapshot at
+  `https://huggingface.co/datasets/sddfhy546y/medical-graphrag-data-test`.
 
 ## Phases
 

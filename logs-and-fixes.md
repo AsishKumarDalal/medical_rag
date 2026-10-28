@@ -15,6 +15,23 @@ Do not: the trap to avoid next time
 
 ---
 
+## 2026-10-28 — Crash-safe hourly HF checkpoints during indexing
+
+Context: the full 52-article / 725-chunk extraction takes hours; the only HF
+upload happened after verify, so a Kaggle crash before that point would lose the
+whole index.
+Tried: relying on the final `push_dataset()` → no data in HF until the run
+finishes; uploading `data_test` directly would also send the local `models/` and
+`embeddings/` caches.
+Fixed: `auto_pipeline.py` starts a background checkpoint thread before
+`build_index`; it writes `artifacts/progress.json` atomically and uploads an
+immediate snapshot plus one every `HF_CHECKPOINT_SECONDS` (default 3600). The
+thread stops before verify/final push. Uploads ignore `models/*`,
+`embeddings/*`, `*.gguf`, logs and `.prepared`. The stopped run has 69/725
+chunks and 1,067 triples; resume without `--force`.
+Do not: pass `--force` when resuming, or the checkpoint is wiped; do not upload
+the local model caches with the dataset.
+
 ## 2026-10-28 — Kaggle venv bootstrap: wrapt, missing LLM_API_KEY, heavy optional deps
 
 Context: running `data_test/prepare_environment.py` on Kaggle; the install was

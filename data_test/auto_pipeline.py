@@ -6,8 +6,9 @@ Runs on Kaggle or locally:
   3. Download the small embedding model if missing.
   4. Resume/complete the medical corpus to at least --min-articles.
   5. Run the GraphRAG index pipeline (extract -> graph -> resolve -> communities -> embed).
-  6. Verify the bundle.
-  7. Run a demo question.
+  6. Upload a crash-safe snapshot to HF immediately and every --checkpoint-seconds.
+  7. Verify the bundle and upload the final bundle.
+  8. Run a demo question.
 
 Usage:
     .venv/bin/python data_test/auto_pipeline.py
@@ -24,6 +25,9 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +37,16 @@ if not PYTHON.is_file():
     PYTHON = Path(sys.executable)
 
 FETCH_SCRIPT = ROOT / "test" / "data" / "test_data_fetch.py"
+
+UPLOAD_IGNORE = [
+    ".prepared",
+    "__pycache__/*",
+    "*.pyc",
+    "*.log",
+    "models/*",
+    "embeddings/*",
+    "*.gguf",
+]
 
 
 def clean_env() -> dict[str, str]:
@@ -296,6 +310,114 @@ def demo() -> int:
     return run([str(PYTHON), str(DATA_TEST / "run_demo.py"), "What is asthma?"], env=env)
 
 
+def _as_int(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _read_json(path: Path) -> dict:
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _jsonl_counts(path: Path) -> tuple[int, int]:
+    records = triples = 0
+    if not path.is_file():
+        return records, triples
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(record, dict):
+                    continue
+                records += 1
+                values = record.get("triples")
+                if isinstance(values, list):
+                    triples += len(values)
+    except OSError:
+        pass
+    return records, triples
+
+
+def collect_progress(data_dir: Path | None = None, started_at: float | None = None) -> dict:
+    data_dir = data_dir or DATA_TEST
+    artifacts = data_dir / "artifacts"
+    index = _read_json(artifacts / "index.json")
+    graph = _read_json(artifacts / "graph.json")
+    communities = _read_json(artifacts / "communities.json")
+    vectors = _read_json(artifacts / "vectors.json")
+    failed_payload = _read_json(artifacts / "failed_chunks.json")
+    records, triples = _jsonl_counts(artifacts / "triples.jsonl")
+
+    failed = _as_int(failed_payload.get("count"))
+    if not failed and isinstance(failed_payload.get("chunks"), list):
+        failed = len(failed_payload["chunks"])
+    total = _as_int(index.get("chunk_count"))
+    done = records + failed
+
+    nodes_value = graph.get("nodes") or {}
+    edges_value = graph.get("edges") or []
+    nodes = len(nodes_value) if isinstance(nodes_value, (dict, list)) else 0
+    edges = len(edges_value) if isinstance(edges_value, list) else 0
+
+    community_count = _as_int(communities.get("count"))
+    community_list = communities.get("communities")
+    if not community_count and isinstance(community_list, (list, dict)):
+        community_count = len(community_list)
+
+    if vectors:
+        stage = "embed"
+    elif communities:
+        stage = "communities"
+    elif (artifacts / "merge_log.json").is_file():
+        stage = "resolve"
+    elif graph:
+        stage = "graph"
+    elif records or failed:
+        stage = "extract"
+    else:
+        stage = "index"
+
+    vector_counts = vectors.get("counts")
+    return {
+        "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "stage": stage,
+        "article_count": _as_int(index.get("article_count")),
+        "chunks_total": total,
+        "chunks_extracted": records,
+        "chunks_failed": failed,
+        "chunks_done": done,
+        "percent": round(100.0 * done / total, 1) if total else 0.0,
+        "triples": triples,
+        "nodes": nodes,
+        "edges": edges,
+        "communities": community_count,
+        "vector_backend": str(vectors.get("backend", "")) if vectors else "",
+        "vectors": vector_counts if isinstance(vector_counts, dict) else {},
+        "elapsed_seconds": int(time.time() - started_at) if started_at else 0,
+    }
+
+
+def write_json_atomic(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
 def get_hf_token() -> str:
     token = os.environ.get("HF_TOKEN", "").strip()
     if token:
@@ -308,9 +430,15 @@ def get_hf_token() -> str:
         return ""
 
 
-def push_dataset(repo_name: str | None) -> int:
-    """Create/update the public dataset `medical-graphrag-data-test`."""
-    token = get_hf_token()
+def upload_dataset(
+    repo_name: str | None,
+    *,
+    data_dir: Path | None = None,
+    token: str | None = None,
+    commit_message: str | None = None,
+) -> int:
+    """Create/update a public HF dataset from a data bundle."""
+    token = token or get_hf_token()
     if not token:
         print("Skipping upload: HF_TOKEN is not set (env or Kaggle secret).", file=sys.stderr)
         return 0
@@ -327,16 +455,105 @@ def push_dataset(repo_name: str | None) -> int:
         repo_id = name
 
     print(f"Using Hugging Face dataset: {repo_id}", flush=True)
-    # exist_ok=True means: reuse the existing dataset repo if it is already there.
-    api.create_repo(repo_id=repo_id, repo_type="dataset", exist_ok=True, private=False)
-    api.upload_folder(
-        folder_path=str(DATA_TEST),
-        repo_id=repo_id,
-        repo_type="dataset",
-        ignore_patterns=[".prepared", "__pycache__/*", "*.pyc", "*.log"],
-    )
+    try:
+        api.create_repo(repo_id=repo_id, repo_type="dataset", exist_ok=True, private=False)
+        api.upload_folder(
+            folder_path=str(data_dir or DATA_TEST),
+            repo_id=repo_id,
+            repo_type="dataset",
+            ignore_patterns=UPLOAD_IGNORE,
+            commit_message=commit_message,
+        )
+    except Exception as exc:
+        print(f"Upload failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
     print(f"Uploaded: https://huggingface.co/datasets/{repo_id}", flush=True)
     return 0
+
+
+def push_dataset(repo_name: str | None) -> int:
+    """Create/update the public dataset with the data_test bundle."""
+    return upload_dataset(repo_name, data_dir=DATA_TEST)
+
+
+def checkpoint_once(
+    repo_name: str | None,
+    data_dir: Path,
+    started_at: float,
+    token: str,
+    *,
+    stage: str | None = None,
+) -> dict:
+    progress = collect_progress(data_dir, started_at)
+    if stage:
+        progress["stage"] = stage
+    write_json_atomic(data_dir / "artifacts" / "progress.json", progress)
+    print(
+        f"[checkpoint] {progress['stage']} "
+        f"{progress['chunks_extracted']}/{progress['chunks_total']} extracted "
+        f"({progress['percent']}% attempted), failed={progress['chunks_failed']}, "
+        f"triples={progress['triples']}, elapsed={progress['elapsed_seconds']}s",
+        flush=True,
+    )
+    rc = upload_dataset(
+        repo_name,
+        data_dir=data_dir,
+        token=token,
+        commit_message=f"checkpoint {progress['updated_at']}",
+    )
+    if rc != 0:
+        print("[checkpoint] upload failed; will retry next interval.", file=sys.stderr, flush=True)
+    return progress
+
+
+def checkpoint_loop(
+    stop_event: threading.Event,
+    repo_name: str | None,
+    interval: int,
+    data_dir: Path,
+    started_at: float,
+    token: str,
+) -> None:
+    while not stop_event.is_set():
+        try:
+            checkpoint_once(repo_name, data_dir, started_at, token)
+        except Exception as exc:
+            print(f"[checkpoint] {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+        if stop_event.wait(interval):
+            break
+
+
+def start_checkpoint_thread(
+    repo_name: str | None,
+    interval: int,
+    data_dir: Path,
+    started_at: float,
+    token: str,
+) -> tuple[threading.Event, threading.Thread] | None:
+    if interval <= 0:
+        return None
+    if not token:
+        print("[checkpoint] disabled: HF_TOKEN is not set.", file=sys.stderr, flush=True)
+        return None
+    stop_event = threading.Event()
+    thread = threading.Thread(
+        target=checkpoint_loop,
+        args=(stop_event, repo_name, interval, data_dir, started_at, token),
+        name="hf-checkpoint",
+        daemon=True,
+    )
+    thread.start()
+    return stop_event, thread
+
+
+def stop_checkpoint_thread(handle: tuple[threading.Event, threading.Thread] | None) -> None:
+    if handle is None:
+        return
+    stop_event, thread = handle
+    stop_event.set()
+    thread.join(timeout=120)
+    if thread.is_alive():
+        print("[checkpoint] upload thread is still running; continuing.", file=sys.stderr, flush=True)
 
 
 MARKER = DATA_TEST / ".prepared"
@@ -382,6 +599,13 @@ def ensure_environment() -> None:
         )
 
 
+def env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+
 def main() -> int:
     load_env()
     ensure_environment()
@@ -398,6 +622,17 @@ def main() -> int:
     parser.add_argument("--skip-demo", action="store_true")
     parser.add_argument("--skip-push", action="store_true")
     parser.add_argument("--repo-id", default=None, help="Hugging Face dataset repo, e.g. user/medical-graphrag-data-test")
+    parser.add_argument(
+        "--checkpoint-seconds",
+        type=int,
+        default=env_int("HF_CHECKPOINT_SECONDS", 3600),
+        help="Upload an HF snapshot every N seconds while indexing (0 disables).",
+    )
+    parser.add_argument(
+        "--checkpoint-repo",
+        default=os.environ.get("HF_CHECKPOINT_REPO") or None,
+        help="Dataset repo for hourly snapshots (default: same as --repo-id).",
+    )
     args = parser.parse_args()
 
     # 1.5 Ollama (optional)
@@ -414,14 +649,28 @@ def main() -> int:
         ensure_corpus(args.min_articles)
 
     server_proc = start_local_servers()
+    started_at = time.time()
+    checkpoint = None
 
     try:
+        if not args.skip_push:
+            checkpoint = start_checkpoint_thread(
+                args.checkpoint_repo or args.repo_id,
+                args.checkpoint_seconds,
+                DATA_TEST,
+                started_at,
+                get_hf_token(),
+            )
+
         # 4. build
         if not args.skip_build:
             rc = build_index(args.retry_failed, args.workers, args.force)
             if rc != 0:
                 print("Build failed.", file=sys.stderr)
                 return rc
+
+        stop_checkpoint_thread(checkpoint)
+        checkpoint = None
 
         # 5. verify
         rc = verify()
@@ -431,6 +680,9 @@ def main() -> int:
 
         # 6. upload
         if not args.skip_push:
+            progress = collect_progress(DATA_TEST, started_at)
+            progress["stage"] = "complete"
+            write_json_atomic(DATA_TEST / "artifacts" / "progress.json", progress)
             rc = push_dataset(args.repo_id)
             if rc != 0:
                 print("Upload failed.", file=sys.stderr)
@@ -443,6 +695,7 @@ def main() -> int:
         print("Auto pipeline complete.")
         return 0
     finally:
+        stop_checkpoint_thread(checkpoint)
         stop_local_servers(server_proc)
 
 
