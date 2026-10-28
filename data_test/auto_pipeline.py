@@ -58,6 +58,7 @@ STAGE_ORDER = {
 UPLOAD_IGNORE = [
     ".prepared",
     "__pycache__/*",
+    "*.py",
     "*.pyc",
     "*.log",
     "models/*",
