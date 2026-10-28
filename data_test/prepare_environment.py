@@ -29,20 +29,50 @@ def run(cmd: list[str]) -> int:
 def create_venv() -> None:
     if VENV_PYTHON.is_file():
         print("Virtual environment already exists.", flush=True)
+        ensure_pip()
         return
-    # Prefer uv if available
+    # Prefer uv if available. --seed installs pip/setuptools/wheel.
     try:
-        subprocess.check_call(["uv", "venv", str(ROOT / ".venv")], cwd=str(ROOT))
+        subprocess.check_call(["uv", "venv", "--seed", str(ROOT / ".venv")], cwd=str(ROOT))
+        ensure_pip()
         return
     except (FileNotFoundError, subprocess.CalledProcessError):
         pass
     run([sys.executable, "-m", "venv", str(ROOT / ".venv")])
+    ensure_pip()
+
+
+def ensure_pip() -> None:
+    """Make sure the venv has pip, even if it was created by a bare `uv venv`."""
+    if subprocess.call([str(VENV_PYTHON), "-m", "pip", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0:
+        return
+    print("pip missing in venv; bootstrapping...", flush=True)
+    # Try uv first (does not need pip inside the venv)
+    try:
+        subprocess.check_call(["uv", "pip", "install", "--python", str(VENV_PYTHON), "pip"], cwd=str(ROOT))
+        return
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+    # Fallback to ensurepip
+    subprocess.call([str(VENV_PYTHON), "-m", "ensurepip", "--upgrade"])
 
 
 def install_deps() -> None:
     pip = [str(VENV_PYTHON), "-m", "pip"]
     run(pip + ["install", "-q", "-r", "requirements.txt"])
-    run(pip + ["install", "-q", "-U", "huggingface_hub", "sentence-transformers", "fastapi", "uvicorn"])
+    run(
+        pip
+        + [
+            "install",
+            "-q",
+            "-U",
+            "huggingface_hub",
+            "sentence-transformers",
+            "fastapi",
+            "uvicorn",
+            "wrapt",
+        ]
+    )
     # llama-cpp-python may need a wheel; try, but do not fail the whole setup if it errors
     try:
         run(pip + ["install", "-q", "-U", "llama-cpp-python"])
@@ -97,7 +127,10 @@ def main() -> int:
     write_env()
     if os.environ.get("USE_OLLAMA", "").strip() == "1":
         print("USE_OLLAMA=1: setting up Ollama...", flush=True)
-        subprocess.call([str(VENV_PYTHON), str(DATA_TEST / "setup_ollama.py")], cwd=str(ROOT))
+        rc = subprocess.call([str(VENV_PYTHON), str(DATA_TEST / "setup_ollama.py")], cwd=str(ROOT))
+        if rc != 0:
+            print("Ollama setup failed; environment marker not written.", flush=True)
+            return rc
     (DATA_TEST / ".prepared").write_text("ok\n", encoding="utf-8")
     print("Environment prepared.")
     print(f"Next: {VENV_PYTHON} data_test/auto_pipeline.py")

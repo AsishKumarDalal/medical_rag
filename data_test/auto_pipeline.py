@@ -21,6 +21,7 @@ import argparse
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -294,7 +295,10 @@ MARKER = DATA_TEST / ".prepared"
 def ensure_environment() -> None:
     os.environ.setdefault("USE_OLLAMA", "1")
     venv_python = ROOT / ".venv" / "bin" / "python"
-    if not MARKER.is_file():
+    needs_prepare = not MARKER.is_file()
+    if os.environ.get("USE_OLLAMA", "").strip() == "1" and not shutil.which("ollama"):
+        needs_prepare = True
+    if needs_prepare:
         py = venv_python if venv_python.is_file() else Path(sys.executable)
         print("Preparing environment...", flush=True)
         subprocess.check_call([str(py), str(DATA_TEST / "prepare_environment.py")])
