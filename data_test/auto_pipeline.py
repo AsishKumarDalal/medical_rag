@@ -298,21 +298,38 @@ def demo() -> int:
     return run([str(PYTHON), str(DATA_TEST / "run_demo.py"), "What is asthma?"], env=env)
 
 
-def push_dataset(repo_id: str | None) -> int:
-    repo_id = (repo_id or os.environ.get("HF_REPO_ID", "")).strip()
-    if not repo_id:
-        print("Skipping upload: set HF_REPO_ID or pass --repo-id to push the dataset.", flush=True)
-        return 0
+def get_hf_token() -> str:
     token = os.environ.get("HF_TOKEN", "").strip()
+    if token:
+        return token
+    try:
+        from kaggle_secrets import UserSecretsClient
+
+        return (UserSecretsClient().get_secret("HF_TOKEN") or "").strip()
+    except Exception:
+        return ""
+
+
+def push_dataset(repo_name: str | None) -> int:
+    """Create/update the public dataset `medical-graphrag-data-test`."""
+    token = get_hf_token()
     if not token:
-        print("Skipping upload: HF_TOKEN is not set.", file=sys.stderr)
-        return 1
+        print("Skipping upload: HF_TOKEN is not set (env or Kaggle secret).", file=sys.stderr)
+        return 0
 
     ensure_module("huggingface_hub")
     from huggingface_hub import HfApi
 
-    print(f"Uploading data_test/ to Hugging Face dataset {repo_id} ...", flush=True)
     api = HfApi(token=token)
+    name = (repo_name or os.environ.get("HF_REPO_ID", "")).strip() or "medical-graphrag-data-test"
+    if "/" not in name:
+        username = api.whoami()["name"]
+        repo_id = f"{username}/{name}"
+    else:
+        repo_id = name
+
+    print(f"Using Hugging Face dataset: {repo_id}", flush=True)
+    # exist_ok=True means: reuse the existing dataset repo if it is already there.
     api.create_repo(repo_id=repo_id, repo_type="dataset", exist_ok=True, private=False)
     api.upload_folder(
         folder_path=str(DATA_TEST),

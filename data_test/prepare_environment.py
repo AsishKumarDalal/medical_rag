@@ -129,10 +129,18 @@ def write_env() -> None:
     token = get_hf_token()
     if token:
         lines.append(f"HF_TOKEN={token}")
-    # Only write if not already present, to avoid clobbering user settings
     if not env_path.is_file():
         env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         print(f"Wrote {env_path}", flush=True)
+        return
+    # Keep the existing file, but add HF_TOKEN if it is missing and we have one.
+    text = env_path.read_text(encoding="utf-8")
+    if token and "HF_TOKEN=" not in text:
+        if text and not text.endswith("\n"):
+            text += "\n"
+        text += f"HF_TOKEN={token}\n"
+        env_path.write_text(text, encoding="utf-8")
+        print(f"Added HF_TOKEN to {env_path}", flush=True)
     else:
         print(f".env already exists at {env_path}; leaving it unchanged.", flush=True)
 
