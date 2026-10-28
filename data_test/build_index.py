@@ -4,6 +4,7 @@ Usage:
     .venv/bin/python data_test/build_index.py
     .venv/bin/python data_test/build_index.py --limit 10
     .venv/bin/python data_test/build_index.py --retry-failed
+    .venv/bin/python data_test/build_index.py --stage extract
 """
 
 from __future__ import annotations
@@ -19,6 +20,8 @@ DATA_TEST = Path(__file__).resolve().parent
 PYTHON = ROOT / ".venv" / "bin" / "python"
 if not PYTHON.is_file():
     PYTHON = Path(sys.executable)
+
+STAGES = ("extract", "graph", "resolve", "communities", "embed")
 
 
 def env() -> dict[str, str]:
@@ -37,47 +40,41 @@ def run(args: list[str]) -> int:
     return subprocess.call(args, cwd=str(ROOT), env=env())
 
 
+def stage_command(stage: str, args: argparse.Namespace) -> list[str]:
+    cmd = [str(PYTHON), "-m", "graphrag.build", "--stage", stage]
+    if stage == "extract":
+        cmd += ["--workers", str(args.workers)]
+        if args.limit is not None:
+            cmd += ["--limit", str(args.limit)]
+        if args.retry_failed:
+            cmd += ["--retry-failed"]
+        if args.force:
+            cmd += ["--force"]
+    elif stage == "embed" and args.force:
+        cmd.append("--force")
+    return cmd
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--stage", choices=[*STAGES, "all"], default="all")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--retry-failed", action="store_true")
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
-    corpus = Path(env()["GRAPHRAG_CORPUS"])
     artifacts = Path(env()["GRAPHRAG_ARTIFACTS"])
+    corpus = Path(env()["GRAPHRAG_CORPUS"])
     artifacts.mkdir(parents=True, exist_ok=True)
     corpus.mkdir(parents=True, exist_ok=True)
 
-    # 1. extract
-    cmd = [str(PYTHON), "-m", "graphrag.build", "--stage", "extract", "--workers", str(args.workers)]
-    if args.limit is not None:
-        cmd += ["--limit", str(args.limit)]
-    if args.retry_failed:
-        cmd += ["--retry-failed"]
-    if args.force:
-        cmd += ["--force"]
-    if run(cmd) != 0:
-        return 1
+    stages = STAGES if args.stage == "all" else (args.stage,)
+    for stage in stages:
+        if run(stage_command(stage, args)) != 0:
+            return 1
 
-    # 2. graph
-    if run([str(PYTHON), "-m", "graphrag.build", "--stage", "graph"]) != 0:
-        return 1
-    # 3. resolve
-    if run([str(PYTHON), "-m", "graphrag.build", "--stage", "resolve"]) != 0:
-        return 1
-    # 4. communities
-    if run([str(PYTHON), "-m", "graphrag.build", "--stage", "communities"]) != 0:
-        return 1
-    # 5. embed
-    embed_cmd = [str(PYTHON), "-m", "graphrag.build", "--stage", "embed"]
-    if args.force:
-        embed_cmd += ["--force"]
-    if run(embed_cmd) != 0:
-        return 1
-
-    print("Build complete.")
+    print("Build complete." if len(stages) > 1 else f"Stage {args.stage} complete.")
     return 0
 
 

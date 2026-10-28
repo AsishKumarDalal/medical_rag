@@ -1,19 +1,22 @@
 """One-command, resumable pipeline for the data_test bundle.
 
 Runs on Kaggle or locally:
-  1. Check/install prerequisite Python modules.
-  2. Download the local LLM (Unsloth GGUF) if missing.
-  3. Download the small embedding model if missing.
-  4. Resume/complete the medical corpus to at least --min-articles.
-  5. Run the GraphRAG index pipeline (extract -> graph -> resolve -> communities -> embed).
-  6. Upload a crash-safe snapshot to HF immediately and every --checkpoint-seconds.
-  7. Verify the bundle and upload the final bundle.
-  8. Run a demo question.
+  1. Restore the latest HF mirror so a restarted session resumes from there.
+  2. Check/install prerequisite Python modules.
+  3. Download the local LLM (Unsloth GGUF) if missing.
+  4. Download the small embedding model if missing.
+  5. Resume/complete the medical corpus to at least --min-articles.
+  6. Run the GraphRAG index pipeline (extract -> graph -> resolve -> communities -> embed).
+  7. Upload a crash-safe mirror to HF immediately, after each phase, and every
+     --checkpoint-seconds.
+  8. Verify the bundle and upload the final bundle.
+  9. Run a demo question.
 
 Usage:
     .venv/bin/python data_test/auto_pipeline.py
     .venv/bin/python data_test/auto_pipeline.py --min-articles 60 --retry-failed
     .venv/bin/python data_test/auto_pipeline.py --skip-models --skip-build
+    .venv/bin/python data_test/auto_pipeline.py --skip-restore
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -37,6 +41,19 @@ if not PYTHON.is_file():
     PYTHON = Path(sys.executable)
 
 FETCH_SCRIPT = ROOT / "test" / "data" / "test_data_fetch.py"
+
+PHASES = ("extract", "graph", "resolve", "communities", "embed")
+RESTORE_PATTERNS = ["corpus/*", "artifacts/*"]
+STAGE_ORDER = {
+    "index": 0,
+    "corpus": 1,
+    "extract": 2,
+    "graph": 3,
+    "resolve": 4,
+    "communities": 5,
+    "embed": 6,
+    "complete": 6,
+}
 
 UPLOAD_IGNORE = [
     ".prepared",
@@ -284,19 +301,47 @@ def stop_local_servers(proc: subprocess.Popen | None) -> None:
             pass
 
 
-def build_index(retry_failed: bool, workers: int, force: bool) -> int:
+def build_index(
+    retry_failed: bool,
+    workers: int,
+    force: bool,
+    *,
+    on_phase: Callable[[str, int], None] | None = None,
+) -> int:
     env = clean_env()
     env["GRAPHRAG_CORPUS"] = str(DATA_TEST / "corpus")
     env["GRAPHRAG_ARTIFACTS"] = str(DATA_TEST / "artifacts")
     # Optional: if an embedding endpoint is provided, keep it; otherwise hash fallback.
 
-    cmd = [str(PYTHON), str(DATA_TEST / "build_index.py")]
-    if retry_failed:
-        cmd.append("--retry-failed")
-    if force:
-        cmd.append("--force")
-    cmd += ["--workers", str(workers)]
-    return run(cmd, env=env)
+    for phase in PHASES:
+        cmd = [
+            str(PYTHON),
+            str(DATA_TEST / "build_index.py"),
+            "--stage",
+            phase,
+            "--workers",
+            str(workers),
+        ]
+        if phase == "extract":
+            if retry_failed:
+                cmd.append("--retry-failed")
+            if force:
+                cmd.append("--force")
+        elif phase == "embed" and force:
+            cmd.append("--force")
+        rc = run(cmd, env=env)
+        if on_phase is not None:
+            try:
+                on_phase(phase, rc)
+            except Exception as exc:
+                print(
+                    f"[checkpoint] phase mirror failed ({type(exc).__name__}: {exc})",
+                    file=sys.stderr,
+                    flush=True,
+                )
+        if rc != 0:
+            return rc
+    return 0
 
 
 def verify() -> int:
@@ -430,6 +475,116 @@ def get_hf_token() -> str:
         return ""
 
 
+def resolve_repo_id(repo_name: str | None, token: str | None) -> str:
+    ensure_module("huggingface_hub")
+    from huggingface_hub import HfApi
+
+    name = (repo_name or os.environ.get("HF_REPO_ID", "")).strip() or "medical-graphrag-data-test"
+    if "/" in name:
+        return name
+    if not token:
+        return ""
+    username = HfApi(token=token).whoami()["name"]
+    return f"{username}/{name}"
+
+
+def _progress_state(data_dir: Path) -> dict:
+    progress = collect_progress(data_dir)
+    stored = _read_json(data_dir / "artifacts" / "progress.json")
+    stored_stage = str(stored.get("stage") or "")
+    if stored_stage == "complete" and progress["stage"] == "embed":
+        progress["stage"] = "complete"
+    elif stored_stage == "corpus" and progress["stage"] == "index":
+        progress["stage"] = "corpus"
+    return progress
+
+
+def _progress_rank(progress: dict) -> tuple[int, int, int]:
+    stage = str(progress.get("stage") or "index")
+    return (
+        STAGE_ORDER.get(stage, 0),
+        _as_int(progress.get("chunks_done")),
+        _as_int(progress.get("article_count")),
+    )
+
+
+def restore_dataset(
+    repo_name: str | None = None,
+    *,
+    data_dir: Path | None = None,
+    token: str | None = None,
+) -> int:
+    """Restore the newest HF mirror so a new session resumes instead of restarting."""
+    data_dir = data_dir or DATA_TEST
+    token = get_hf_token() if token is None else token
+    repo_id = resolve_repo_id(repo_name, token)
+    if not repo_id:
+        print(
+            "[restore] skipped: set --repo-id or HF_REPO_ID to locate the HF mirror.",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 0
+
+    ensure_module("huggingface_hub")
+    from huggingface_hub import snapshot_download
+    from huggingface_hub.utils import RepositoryNotFoundError
+
+    print(f"[restore] checking HF mirror: {repo_id}", flush=True)
+    try:
+        snapshot_path = snapshot_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            token=token or None,
+            allow_patterns=RESTORE_PATTERNS,
+        )
+    except RepositoryNotFoundError:
+        print("[restore] no mirror found; starting from local state.", flush=True)
+        return 0
+    except Exception as exc:
+        print(
+            f"[restore] download failed ({type(exc).__name__}: {exc}); "
+            "continuing with local state.",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 0
+
+    staging = Path(snapshot_path)
+    if not (staging / "corpus").is_dir() and not (staging / "artifacts").is_dir():
+        print("[restore] mirror has no corpus or artifacts yet; keeping local state.", flush=True)
+        return 0
+
+    remote = _progress_state(staging)
+    local = _progress_state(data_dir)
+    local_has_data = (data_dir / "corpus" / "manifest.json").is_file() or (
+        data_dir / "artifacts" / "index.json"
+    ).is_file()
+    if _progress_rank(remote) <= _progress_rank(local) and local_has_data:
+        print(
+            f"[restore] local state is current ({local['stage']} "
+            f"{local['chunks_done']}/{local['chunks_total']}); keeping it.",
+            flush=True,
+        )
+        return 0
+
+    restored = 0
+    for name in ("corpus", "artifacts"):
+        entry = staging / name
+        if not entry.is_dir():
+            continue
+        shutil.copytree(entry, data_dir / name, dirs_exist_ok=True)
+        restored += 1
+
+    print(
+        f"[restore] restored {restored} data folders from HF "
+        f"({remote['stage']} {remote['chunks_done']}/{remote['chunks_total']}, "
+        f"triples={remote['triples']}).",
+        flush=True,
+    )
+    return 0
+
+
 def upload_dataset(
     repo_name: str | None,
     *,
@@ -447,12 +602,7 @@ def upload_dataset(
     from huggingface_hub import HfApi
 
     api = HfApi(token=token)
-    name = (repo_name or os.environ.get("HF_REPO_ID", "")).strip() or "medical-graphrag-data-test"
-    if "/" not in name:
-        username = api.whoami()["name"]
-        repo_id = f"{username}/{name}"
-    else:
-        repo_id = name
+    repo_id = resolve_repo_id(repo_name, token)
 
     print(f"Using Hugging Face dataset: {repo_id}", flush=True)
     try:
@@ -476,6 +626,9 @@ def push_dataset(repo_name: str | None) -> int:
     return upload_dataset(repo_name, data_dir=DATA_TEST)
 
 
+_CHECKPOINT_LOCK = threading.Lock()
+
+
 def checkpoint_once(
     repo_name: str | None,
     data_dir: Path,
@@ -484,26 +637,27 @@ def checkpoint_once(
     *,
     stage: str | None = None,
 ) -> dict:
-    progress = collect_progress(data_dir, started_at)
-    if stage:
-        progress["stage"] = stage
-    write_json_atomic(data_dir / "artifacts" / "progress.json", progress)
-    print(
-        f"[checkpoint] {progress['stage']} "
-        f"{progress['chunks_extracted']}/{progress['chunks_total']} extracted "
-        f"({progress['percent']}% attempted), failed={progress['chunks_failed']}, "
-        f"triples={progress['triples']}, elapsed={progress['elapsed_seconds']}s",
-        flush=True,
-    )
-    rc = upload_dataset(
-        repo_name,
-        data_dir=data_dir,
-        token=token,
-        commit_message=f"checkpoint {progress['updated_at']}",
-    )
-    if rc != 0:
-        print("[checkpoint] upload failed; will retry next interval.", file=sys.stderr, flush=True)
-    return progress
+    with _CHECKPOINT_LOCK:
+        progress = collect_progress(data_dir, started_at)
+        if stage:
+            progress["stage"] = stage
+        write_json_atomic(data_dir / "artifacts" / "progress.json", progress)
+        print(
+            f"[checkpoint] {progress['stage']} "
+            f"{progress['chunks_extracted']}/{progress['chunks_total']} extracted "
+            f"({progress['percent']}% attempted), failed={progress['chunks_failed']}, "
+            f"triples={progress['triples']}, elapsed={progress['elapsed_seconds']}s",
+            flush=True,
+        )
+        rc = upload_dataset(
+            repo_name,
+            data_dir=data_dir,
+            token=token,
+            commit_message=f"checkpoint {progress['updated_at']}",
+        )
+        if rc != 0:
+            print("[checkpoint] upload failed; will retry next interval.", file=sys.stderr, flush=True)
+        return progress
 
 
 def checkpoint_loop(
@@ -621,6 +775,11 @@ def main() -> int:
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--skip-demo", action="store_true")
     parser.add_argument("--skip-push", action="store_true")
+    parser.add_argument(
+        "--skip-restore",
+        action="store_true",
+        help="Do not restore the latest HF mirror before running.",
+    )
     parser.add_argument("--repo-id", default=None, help="Hugging Face dataset repo, e.g. user/medical-graphrag-data-test")
     parser.add_argument(
         "--checkpoint-seconds",
@@ -635,6 +794,15 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    token = get_hf_token()
+    mirror_repo = args.checkpoint_repo or args.repo_id
+    allow_push = not args.skip_push and bool(token)
+
+    if not args.skip_restore:
+        restore_dataset(mirror_repo, data_dir=DATA_TEST, token=token)
+
+    started_at = time.time()
+
     # 1.5 Ollama (optional)
     setup_ollama()
 
@@ -647,24 +815,41 @@ def main() -> int:
     # 3. corpus
     if not args.skip_corpus:
         ensure_corpus(args.min_articles)
+        if allow_push:
+            checkpoint_once(mirror_repo, DATA_TEST, started_at, token, stage="corpus")
 
     server_proc = start_local_servers()
-    started_at = time.time()
     checkpoint = None
+
+    def mirror_phase(phase: str, rc: int) -> None:
+        if not allow_push:
+            return
+        checkpoint_once(
+            mirror_repo,
+            DATA_TEST,
+            started_at,
+            token,
+            stage=phase if rc == 0 else None,
+        )
 
     try:
         if not args.skip_push:
             checkpoint = start_checkpoint_thread(
-                args.checkpoint_repo or args.repo_id,
+                mirror_repo,
                 args.checkpoint_seconds,
                 DATA_TEST,
                 started_at,
-                get_hf_token(),
+                token,
             )
 
         # 4. build
         if not args.skip_build:
-            rc = build_index(args.retry_failed, args.workers, args.force)
+            rc = build_index(
+                args.retry_failed,
+                args.workers,
+                args.force,
+                on_phase=mirror_phase,
+            )
             if rc != 0:
                 print("Build failed.", file=sys.stderr)
                 return rc
@@ -680,10 +865,11 @@ def main() -> int:
 
         # 6. upload
         if not args.skip_push:
-            progress = collect_progress(DATA_TEST, started_at)
-            progress["stage"] = "complete"
-            write_json_atomic(DATA_TEST / "artifacts" / "progress.json", progress)
-            rc = push_dataset(args.repo_id)
+            with _CHECKPOINT_LOCK:
+                progress = collect_progress(DATA_TEST, started_at)
+                progress["stage"] = "complete"
+                write_json_atomic(DATA_TEST / "artifacts" / "progress.json", progress)
+                rc = push_dataset(args.repo_id)
             if rc != 0:
                 print("Upload failed.", file=sys.stderr)
                 return rc
