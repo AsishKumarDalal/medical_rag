@@ -35,9 +35,18 @@ if not PYTHON.is_file():
 FETCH_SCRIPT = ROOT / "test" / "data" / "test_data_fetch.py"
 
 
+def clean_env() -> dict[str, str]:
+    env = os.environ.copy()
+    # Kaggle injects a system sitecustomize via PYTHONPATH that can break venv
+    # interpreters; the venv does not need it.
+    env.pop("PYTHONPATH", None)
+    env["PYTHONNOUSERSITE"] = "1"
+    return env
+
+
 def run(cmd: list[str], env: dict[str, str] | None = None) -> int:
     print("+ " + " ".join(cmd), flush=True)
-    return subprocess.call(cmd, cwd=str(ROOT), env=env or os.environ.copy())
+    return subprocess.call(cmd, cwd=str(ROOT), env=env or clean_env())
 
 
 def ensure_module(name: str, package: str | None = None) -> None:
@@ -219,7 +228,7 @@ def setup_ollama() -> None:
     if os.environ.get("USE_OLLAMA", "").strip() != "1":
         return
     print("Setting up Ollama...", flush=True)
-    rc = subprocess.call([str(PYTHON), str(DATA_TEST / "setup_ollama.py")], cwd=str(ROOT))
+    rc = subprocess.call([str(PYTHON), str(DATA_TEST / "setup_ollama.py")], cwd=str(ROOT), env=clean_env())
     if rc != 0:
         print("Ollama setup failed.", file=sys.stderr)
         raise SystemExit(rc)
@@ -264,7 +273,7 @@ def stop_local_servers(proc: subprocess.Popen | None) -> None:
 
 
 def build_index(retry_failed: bool, workers: int, force: bool) -> int:
-    env = os.environ.copy()
+    env = clean_env()
     env["GRAPHRAG_CORPUS"] = str(DATA_TEST / "corpus")
     env["GRAPHRAG_ARTIFACTS"] = str(DATA_TEST / "artifacts")
     # Optional: if an embedding endpoint is provided, keep it; otherwise hash fallback.
@@ -283,7 +292,7 @@ def verify() -> int:
 
 
 def demo() -> int:
-    env = os.environ.copy()
+    env = clean_env()
     env["GRAPHRAG_CORPUS"] = str(DATA_TEST / "corpus")
     env["GRAPHRAG_ARTIFACTS"] = str(DATA_TEST / "artifacts")
     return run([str(PYTHON), str(DATA_TEST / "run_demo.py"), "What is asthma?"], env=env)
@@ -301,7 +310,7 @@ def ensure_environment() -> None:
     if needs_prepare:
         py = venv_python if venv_python.is_file() else Path(sys.executable)
         print("Preparing environment...", flush=True)
-        subprocess.check_call([str(py), str(DATA_TEST / "prepare_environment.py")])
+        subprocess.check_call([str(py), str(DATA_TEST / "prepare_environment.py")], env=clean_env())
         if not venv_python.is_file():
             os.execv(str(venv_python), [str(venv_python)] + sys.argv)
 

@@ -21,9 +21,16 @@ DATA_TEST = Path(__file__).resolve().parent
 VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
 
 
+def clean_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env["PYTHONNOUSERSITE"] = "1"
+    return env
+
+
 def run(cmd: list[str]) -> int:
     print("+ " + " ".join(cmd), flush=True)
-    return subprocess.call(cmd, cwd=str(ROOT))
+    return subprocess.call(cmd, cwd=str(ROOT), env=clean_env())
 
 
 def create_venv() -> None:
@@ -33,7 +40,7 @@ def create_venv() -> None:
         return
     # Prefer uv if available. --seed installs pip/setuptools/wheel.
     try:
-        subprocess.check_call(["uv", "venv", "--seed", str(ROOT / ".venv")], cwd=str(ROOT))
+        subprocess.check_call(["uv", "venv", "--seed", str(ROOT / ".venv")], cwd=str(ROOT), env=clean_env())
         ensure_pip()
         return
     except (FileNotFoundError, subprocess.CalledProcessError):
@@ -44,12 +51,21 @@ def create_venv() -> None:
 
 def ensure_pip() -> None:
     """Make sure the venv has pip, even if it was created by a bare `uv venv`."""
-    if subprocess.call([str(VENV_PYTHON), "-m", "pip", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0:
+    if subprocess.call(
+        [str(VENV_PYTHON), "-m", "pip", "--version"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=clean_env(),
+    ) == 0:
         return
     print("pip missing in venv; bootstrapping...", flush=True)
     # Try uv first (does not need pip inside the venv)
     try:
-        subprocess.check_call(["uv", "pip", "install", "--python", str(VENV_PYTHON), "pip"], cwd=str(ROOT))
+        subprocess.check_call(
+            ["uv", "pip", "install", "--python", str(VENV_PYTHON), "pip"],
+            cwd=str(ROOT),
+            env=clean_env(),
+        )
         return
     except (FileNotFoundError, subprocess.CalledProcessError):
         pass
@@ -127,7 +143,11 @@ def main() -> int:
     write_env()
     if os.environ.get("USE_OLLAMA", "").strip() == "1":
         print("USE_OLLAMA=1: setting up Ollama...", flush=True)
-        rc = subprocess.call([str(VENV_PYTHON), str(DATA_TEST / "setup_ollama.py")], cwd=str(ROOT))
+        rc = subprocess.call(
+            [str(VENV_PYTHON), str(DATA_TEST / "setup_ollama.py")],
+            cwd=str(ROOT),
+            env=clean_env(),
+        )
         if rc != 0:
             print("Ollama setup failed; environment marker not written.", flush=True)
             return rc
