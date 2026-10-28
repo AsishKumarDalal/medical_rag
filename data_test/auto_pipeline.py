@@ -298,6 +298,32 @@ def demo() -> int:
     return run([str(PYTHON), str(DATA_TEST / "run_demo.py"), "What is asthma?"], env=env)
 
 
+def push_dataset(repo_id: str | None) -> int:
+    repo_id = (repo_id or os.environ.get("HF_REPO_ID", "")).strip()
+    if not repo_id:
+        print("Skipping upload: set HF_REPO_ID or pass --repo-id to push the dataset.", flush=True)
+        return 0
+    token = os.environ.get("HF_TOKEN", "").strip()
+    if not token:
+        print("Skipping upload: HF_TOKEN is not set.", file=sys.stderr)
+        return 1
+
+    ensure_module("huggingface_hub")
+    from huggingface_hub import HfApi
+
+    print(f"Uploading data_test/ to Hugging Face dataset {repo_id} ...", flush=True)
+    api = HfApi(token=token)
+    api.create_repo(repo_id=repo_id, repo_type="dataset", exist_ok=True, private=False)
+    api.upload_folder(
+        folder_path=str(DATA_TEST),
+        repo_id=repo_id,
+        repo_type="dataset",
+        ignore_patterns=[".prepared", "__pycache__/*", "*.pyc"],
+    )
+    print(f"Uploaded: https://huggingface.co/datasets/{repo_id}", flush=True)
+    return 0
+
+
 MARKER = DATA_TEST / ".prepared"
 
 
@@ -338,6 +364,8 @@ def main() -> int:
     parser.add_argument("--skip-corpus", action="store_true")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--skip-demo", action="store_true")
+    parser.add_argument("--skip-push", action="store_true")
+    parser.add_argument("--repo-id", default=None, help="Hugging Face dataset repo, e.g. user/medical-graphrag-data-test")
     args = parser.parse_args()
 
     # 1. prerequisites
@@ -372,7 +400,14 @@ def main() -> int:
             print("Verification failed.", file=sys.stderr)
             return rc
 
-        # 6. demo
+        # 6. upload
+        if not args.skip_push:
+            rc = push_dataset(args.repo_id)
+            if rc != 0:
+                print("Upload failed.", file=sys.stderr)
+                return rc
+
+        # 7. demo
         if not args.skip_demo:
             demo()
 
