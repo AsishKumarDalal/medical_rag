@@ -107,6 +107,8 @@ def is_running() -> bool:
 
 def stop_ollama() -> None:
     subprocess.run(["pkill", "-9", "-x", "ollama"], check=False)
+    # ollama serve may leave its llama-server child holding the GPUs.
+    subprocess.run(["pkill", "-9", "-x", "llama-server"], check=False)
     time.sleep(2)
 
 

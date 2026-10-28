@@ -18,9 +18,11 @@ def main() -> int:
     question = " ".join(sys.argv[1:]).strip() or "What is asthma?"
 
     env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    env.pop("UV_SYSTEM_PYTHON", None)
+    env["PYTHONNOUSERSITE"] = "1"
     env.setdefault("GRAPHRAG_CORPUS", str(DATA_TEST / "corpus"))
     env.setdefault("GRAPHRAG_ARTIFACTS", str(DATA_TEST / "artifacts"))
-    env.setdefault("GRAPHRAG_CORPUS", str(DATA_TEST / "corpus"))
 
     cmd = [str(PYTHON), "-m", "graphrag.ask", "--mode", "auto", question]
     print("+ " + " ".join(cmd), flush=True)

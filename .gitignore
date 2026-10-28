@@ -20,6 +20,14 @@ test/data/corpus/
 test/data/corpus_mini/
 test/data/manifest.json
 graphrag/artifacts/
+
+# data_test bundle is rebuilt by auto_pipeline and pushed to Hugging Face
+data_test/.prepared
+data_test/corpus/
+data_test/artifacts/
+data_test/models/
+data_test/embeddings/
+data_test/ollama_server.log
 *.jsonl
 *.sqlite
 *.sqlite3
