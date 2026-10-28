@@ -156,11 +156,14 @@ export HF_TOKEN=<from Kaggle secrets>
 ```
 
 ### 4.2 Resume / track progress
-The pipeline is checkpointed. Before starting, check if a dataset already exists on
-Hugging Face:
-- If `medical_test_data` dataset does NOT exist: create it.
-- If it DOES exist: download it first and inspect `manifest.json` + `triples.jsonl`
-  to see how many chunks are already extracted.
+The pipeline is checkpointed. `auto_pipeline.py` restores the newest HF mirror's
+`corpus/` and `artifacts/` before it fetches anything or starts the build, so a
+restarted session resumes from the mirrored corpus and extraction checkpoint
+instead of restarting from an empty local folder. Code files stay local, and the
+local bundle is kept when it is ahead of the mirror. A snapshot is uploaded after
+corpus, extract, graph, resolve, communities and embed (plus every
+`HF_CHECKPOINT_SECONDS` during long extraction). Use `--skip-restore` only for a
+deliberate local-only run.
 
 Track progress by:
 - `wc -l data_test/corpus/*.txt` (corpus size)
@@ -249,8 +252,9 @@ server at `data_test/models/<gguf-file>`.
 - `triples.jsonl` is append-only; line count = extracted chunks.
 - `failed_chunks.json` lists failed chunk IDs.
 - `vectors.json` fingerprints ensure unchanged text reuses vectors.
-- If a dataset version already exists:
-  1. Download it.
+- If a dataset version already exists, `auto_pipeline.py` restores it on startup.
+  To resume by hand:
+  1. Download it (`download_dataset.py`).
   2. Compare manifest count to desired corpus.
   3. If corpus changed, re-run fetch with merge.
   4. Re-run extract with `--retry-failed`.
