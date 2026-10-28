@@ -118,7 +118,7 @@ def write_env() -> None:
         f'GRAPHRAG_CORPUS={DATA_TEST / "corpus"}',
         f'GRAPHRAG_ARTIFACTS={DATA_TEST / "artifacts"}',
         "LLM_BASE_URL=http://127.0.0.1:11434/v1",
-        "LLM_MODEL=qwen3:4b",
+        "LLM_MODEL=qwen3-4b-instruct-2507",
         "LLM_MAX_TOKENS=4096",
         "HARNESS_CONTEXT_WINDOW=50000",
         "GRAPHRAG_EMBED_BASE_URL=http://127.0.0.1:11434/v1",
@@ -135,12 +135,20 @@ def write_env() -> None:
         return
     # Keep the existing file, but add HF_TOKEN if it is missing and we have one.
     text = env_path.read_text(encoding="utf-8")
+    changed = False
     if token and "HF_TOKEN=" not in text:
         if text and not text.endswith("\n"):
             text += "\n"
         text += f"HF_TOKEN={token}\n"
-        env_path.write_text(text, encoding="utf-8")
+        changed = True
         print(f"Added HF_TOKEN to {env_path}", flush=True)
+    # Upgrade the old default model name if it is still there.
+    if "LLM_MODEL=qwen3:4b" in text:
+        text = text.replace("LLM_MODEL=qwen3:4b", "LLM_MODEL=qwen3-4b-instruct-2507")
+        changed = True
+        print(f"Updated LLM_MODEL in {env_path}", flush=True)
+    if changed:
+        env_path.write_text(text, encoding="utf-8")
     else:
         print(f".env already exists at {env_path}; leaving it unchanged.", flush=True)
 
