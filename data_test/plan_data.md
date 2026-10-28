@@ -161,9 +161,10 @@ The pipeline is checkpointed. `auto_pipeline.py` restores the newest HF mirror's
 restarted session resumes from the mirrored corpus and extraction checkpoint
 instead of restarting from an empty local folder. Code files stay local, and the
 local bundle is kept when it is ahead of the mirror. A snapshot is uploaded after
-corpus, extract, graph, resolve, communities and embed (plus every
-`HF_CHECKPOINT_SECONDS` during long extraction). Use `--skip-restore` only for a
-deliberate local-only run.
+corpus, extract, graph, resolve, communities and embed, immediately when the
+build finishes, and every `HF_CHECKPOINT_SECONDS` during long extraction, so a
+run that finishes before the hourly interval is still uploaded. Use
+`--skip-restore` only for a deliberate local-only run.
 
 Track progress by:
 - `wc -l data_test/corpus/*.txt` (corpus size)

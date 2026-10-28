@@ -857,6 +857,9 @@ def main() -> int:
         stop_checkpoint_thread(checkpoint)
         checkpoint = None
 
+        if allow_push:
+            checkpoint_once(mirror_repo, DATA_TEST, started_at, token)
+
         # 5. verify
         rc = verify()
         if rc != 0:
