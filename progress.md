@@ -7,9 +7,9 @@ Task protocol and detailed learnings live in `TASK.md` and `logs-and-fixes.md`.
 - **Current phase:** G1 live indexing on Kaggle via `data_test/auto_pipeline.py`
   (52 articles, 725 chunks); extraction stopped at **69/725** to add crash-safe
   HF checkpoints.
-- **Next:** merge PR #2, resume without `--force`, and confirm the first hourly
-  snapshot at `sddfhy546y/medical-graphrag-data-test`; then live G2 queries, G3
-  tool round-trip and the G4 evaluation run.
+- **Next:** monitor the resumed 725-chunk build and its hourly snapshots, then
+  the final verify/push/demo; followed by live G2 queries, G3 tool round-trip and
+  the G4 evaluation run.
 
 ## Data_test Kaggle run (2026-10-28)
 
@@ -22,8 +22,11 @@ Task protocol and detailed learnings live in `TASK.md` and `logs-and-fixes.md`.
 - Checkpoint + upload path tested against a scratch HF repo (`progress.json`
   round-trip, SHA match), then the scratch repo was deleted. Offline suite:
   **140 passed**.
-- Remaining: merge PR #2, resume the run, confirm the first snapshot at
-  `https://huggingface.co/datasets/sddfhy546y/medical-graphrag-data-test`.
+- PR #2 merged to `main` (`fd979d1`); resumed without `--force` at 69/725.
+  First snapshot is live at
+  `https://huggingface.co/datasets/sddfhy546y/medical-graphrag-data-test`
+  (67 files, 69/725, 1,067 triples, 9.5%, public). Next upload is one hour after
+  the 19:21 UTC start; the final push follows verify/demo.
 
 ## Phases
 
