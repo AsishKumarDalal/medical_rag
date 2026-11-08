@@ -15,6 +15,61 @@ Do not: the trap to avoid next time
 
 ---
 
+## 2026-11-08 — `uv venv` created a venv without pip on Kaggle
+
+Context: `prepare_environment.py` created `.venv` with `uv venv`, then ran
+`.venv/bin/python -m pip install ...`.
+Tried: assuming `uv venv` seeds pip → `No module named pip` on every install.
+Fixed: use `uv venv --seed`, and `ensure_pip()` bootstraps pip with
+`uv pip install --python .venv/bin/python pip` when an existing venv lacks it.
+Do not: assume a virtual environment made by a fast creator has pip.
+
+## 2026-11-08 — Kaggle `sitecustomize` leaked `wrapt` errors into the venv
+
+Context: every `.venv/bin/python` invocation printed
+`Error in sitecustomize ... No module named 'wrapt'` before running the command.
+Tried: installing `wrapt` in the venv; the system `sitecustomize` still loaded
+first because Kaggle puts its site-packages on `PYTHONPATH`.
+Fixed: all data_test subprocess calls use a clean env that removes `PYTHONPATH`
+and sets `PYTHONNOUSERSITE=1`; `wrapt` is also installed for good measure.
+Do not: debug the venv when the failure is the host Python injecting a
+`sitecustomize` module.
+
+## 2026-11-08 — Ollama installer failed on Kaggle without zstd
+
+Context: `curl -fsSL https://ollama.com/install.sh | sh` exited with
+`This version requires zstd for extraction`.
+Tried: rerunning the installer → same failure; the Kaggle image has no `zstd`.
+Fixed: `setup_ollama.py` tries `sudo apt-get install -y zstd` (and the non-sudo
+form), then falls back to downloading the standalone
+`ollama-linux-amd64` binary into `~/.local/bin` and extending `PATH`.
+Do not: assume the Ollama one-liner works on every image.
+
+## 2026-11-08 — HF dataset upload was manual and non-idempotent
+
+Context: the plan told the user to run a separate `HfApi` snippet after the
+pipeline, so the bundle was not actually automatic.
+Tried: hard-coding `HF_REPO_ID` and failing when it was absent.
+Fixed: `auto_pipeline.py` now resolves the token from env or Kaggle secrets,
+defaults the repo name to `medical-graphrag-data-test`, derives the namespace with
+`whoami()`, and calls `create_repo(..., exist_ok=True)` before `upload_folder`.
+An existing dataset is reused and updated; `--skip-push` opts out.
+Do not: require a manual upload step in a one-command pipeline.
+
+## 2026-11-08 — A 4B Q4 model may stay on one GPU
+
+Context: the Kaggle run uses two T4s, but `nvidia-smi` showed the Ollama model
+loaded on one GPU only.
+Tried: relying on `OLLAMA_SCHED_SPREAD=1` alone to force a split.
+Fixed: `setup_ollama.py` sets `OLLAMA_SCHED_SPREAD=1`,
+`OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`,
+`OLLAMA_NUM_PARALLEL=1`, `OLLAMA_KEEP_ALIVE=-1` and a 32k context, and pulls the
+exact `hf.co/unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M` then aliases it to
+`qwen3-4b-instruct-2507`.
+Do not: assume both GPUs must be busy; a model that fits on one T4 is often faster
+there than split across two. Running two servers (one per GPU) is the way to use
+both independently, at the cost of routing and two workers.
+
 ## 2026-10-28 — Crash-safe hourly HF checkpoints during indexing
 
 Context: the full 52-article / 725-chunk extraction takes hours; the only HF

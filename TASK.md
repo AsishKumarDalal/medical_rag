@@ -1,5 +1,16 @@
 # Active task
 
+## Data test bundle (completed 2026-11-08)
+
+- [x] `data_test/plan_data.md` — corpus, model, Kaggle, dataset, verification plan
+- [x] `prepare_environment.py` — venv/pip, Ollama, `.env`, clean `PYTHONPATH`
+- [x] `setup_ollama.py` — install Ollama, pull Qwen3-4B + nomic-embed-text,
+      GPU/KV-cache settings, model alias
+- [x] `auto_pipeline.py` — resumable corpus → index → verify → demo → HF upload
+- [x] `build_index.py`, `verify_bundle.py`, `run_demo.py`, `download_dataset.py`
+- [x] Auto-create/update `medical-graphrag-data-test` on Hugging Face
+- [x] `data_test/docs/` — bundle and Kaggle run guides
+
 ## G1 — Indexing pipeline (`goal.md` Part B, phase G1)
 
 - [x] I1/I2: `corpus.py` + `chunk.py` — load corpus, deterministic ~1000-char chunks
